@@ -1,5 +1,7 @@
 //! Frameless main window, close preference, and custom title-bar commands.
 
+use std::path::Path;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::window::Color;
@@ -154,6 +156,25 @@ pub fn set_close_action(app: AppHandle, action: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Read the resolved `dsh web` / GUI port (the saved preference, or the default).
+#[tauri::command]
+pub fn get_web_port() -> u16 {
+    desktop_settings::effective_web_port(&desktop_settings::load())
+}
+
+/// Persist the `dsh web` / GUI port and toast that a restart is required to apply it.
+#[tauri::command]
+pub fn set_web_port(app: AppHandle, port: u16) -> Result<(), String> {
+    if port == 0 {
+        return Err("web port must be between 1 and 65535".into());
+    }
+    let mut settings = desktop_settings::load();
+    settings.web_port = Some(port);
+    desktop_settings::save(&settings)?;
+    notify::toast(&app, "DeepSeek Harness", i18n::t(Msg::WebPortRestart));
+    Ok(())
+}
+
 /// Persist a close action from the tray without immediately hiding or quitting.
 pub fn remember_close_action(app: &AppHandle, action: Option<CloseAction>) -> Result<(), String> {
     save_close_action(action)?;
@@ -224,6 +245,76 @@ pub fn remember_agent_environment(app: &AppHandle, value: AgentEnvironment) {
             notify::toast(app, i18n::t(Msg::EnvSaveFailed), &error);
         }
     }
+}
+
+/// Persist the web port from the tray (or `None` to reset to the default) and
+/// toast that a restart applies it.
+pub fn remember_web_port(app: &AppHandle, port: Option<u16>) {
+    let mut settings = desktop_settings::load();
+    settings.web_port = port;
+    if let Err(error) = desktop_settings::save(&settings) {
+        boot_log::error(&format!("tray web port save failed: {error}"));
+        notify::toast(app, i18n::t(Msg::WebPortSaveFailed), &error);
+        return;
+    }
+    notify::toast(app, "DeepSeek Harness", i18n::t(Msg::WebPortRestart));
+}
+
+/// Open the boot / error log with the OS default viewer. When no log exists yet
+/// (e.g. a fresh install), open the desktop app-data directory instead.
+pub fn open_boot_log(app: &AppHandle) {
+    let root = match crate::runtime::app_data_root() {
+        Ok(root) => root,
+        Err(error) => {
+            notify::toast(app, "DeepSeek Harness", &error);
+            return;
+        }
+    };
+    let log = root.join("boot.log");
+    if !log.is_file() {
+        match open_with_os(&root) {
+            Ok(()) => notify::toast(app, "DeepSeek Harness", i18n::t(Msg::LogMissing)),
+            Err(error) => {
+                boot_log::error(&format!("open log dir failed: {error}"));
+                notify::toast(app, i18n::t(Msg::LogOpenFailed), &error);
+            }
+        }
+        return;
+    }
+    if let Err(error) = open_with_os(&log) {
+        boot_log::error(&format!("open boot log failed: {error}"));
+        notify::toast(app, i18n::t(Msg::LogOpenFailed), &error);
+    }
+}
+
+/// Open a path with the platform default viewer (detached; never blocks the UI).
+#[cfg(target_os = "windows")]
+fn open_with_os(path: &Path) -> Result<(), String> {
+    Command::new("cmd")
+        .args(["/C", "start", "", &format!("\"{}\"", path.display())])
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Open a path with the platform default viewer (detached; never blocks the UI).
+#[cfg(target_os = "macos")]
+fn open_with_os(path: &Path) -> Result<(), String> {
+    Command::new("open")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Open a path with the platform default viewer (detached; never blocks the UI).
+#[cfg(all(unix, not(target_os = "macos")))]
+fn open_with_os(path: &Path) -> Result<(), String> {
+    Command::new("xdg-open")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

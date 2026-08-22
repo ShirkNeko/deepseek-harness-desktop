@@ -39,6 +39,7 @@ impl DesktopRuntime {
     pub async fn start(
         paths: RuntimePaths,
         overlay: Option<&HostOverlay>,
+        web_port: u16,
         progress: Arc<dyn Fn(ProvisionEvent) + Send + Sync>,
     ) -> Result<Self, String> {
         boot_log::info(&format!(
@@ -62,7 +63,7 @@ impl DesktopRuntime {
             return Err(error);
         }
         progress(ProvisionEvent::Status(i18n::t(Msg::StatusStartWeb).into()));
-        let host = supervisor::spawn_web_host(&paths, overlay, &host_path).await?;
+        let host = supervisor::spawn_web_host(&paths, overlay, &host_path, web_port).await?;
         boot_log::info(&format!("dsh web ready url={}", host.web_url));
         Ok(Self {
             paths: paths.clone(),

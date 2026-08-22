@@ -95,7 +95,7 @@ mod tests {
             linux_path: "/home/u/.local/share/dsh-desktop/runtime/node/bin:/usr/bin".into(),
             linux_patch: Some("/home/u/.dsh/desktop-overlay/cordis.yml".into()),
             notify_url: Some("http://127.0.0.1:17991/".into()),
-            port: 17890,
+            port: 3080,
             host: "127.0.0.1".into(),
         }
     }
@@ -128,7 +128,7 @@ mod tests {
             "--host".to_string(),
             "127.0.0.1".to_string(),
             "--port".to_string(),
-            "17890".to_string(),
+            "3080".to_string(),
         ];
         assert_eq!(cmd.args, expected);
         assert!(cmd.args.iter().any(|a| a == "--exec"));

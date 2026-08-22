@@ -12,8 +12,10 @@ pub const MIN_UNRESTRICTED_NODE_MAJOR: u64 = 24;
 /// pnpm version aligned with root packageManager.
 pub const DEFAULT_PNPM_VERSION: &str = "11.7.0";
 
-/// Host port range start for `dsh web`.
-pub const DEFAULT_WEB_PORT: u16 = 17_890;
+/// Default host port range start for `dsh web`. Overridable through the
+/// `webPort` desktop setting (see `desktop-settings.json`); production default
+/// matches dsh's own `web` port.
+pub const DEFAULT_WEB_PORT: u16 = 3080;
 
 /// Bundled harness resource directory name inside Tauri resources.
 pub const BUNDLED_HARNESS_DIR: &str = "harness-source";

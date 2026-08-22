@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use super::app_data_root;
 use super::boot_log;
-use super::config::DEFAULT_WEB_PORT;
 use super::process::{
     hide_console, isolate_host_group, kill_process_tree, reclaim_stale_host, write_host_pid,
 };
@@ -85,6 +84,7 @@ pub async fn spawn_web_host(
     paths: &RuntimePaths,
     overlay: Option<&HostOverlay>,
     host_path: &str,
+    web_port: u16,
 ) -> Result<HostHandle, String> {
     if !paths.cli_entry.is_file() {
         return Err(format!(
@@ -94,7 +94,7 @@ pub async fn spawn_web_host(
     }
 
     reclaim_stale_host(&host_pid_path());
-    let port = pick_port(DEFAULT_WEB_PORT)?;
+    let port = pick_port(web_port)?;
     let web_url = format!("http://127.0.0.1:{port}/");
     let mut disabled_plugins: Vec<String> = Vec::new();
     let mut last_error = String::new();
@@ -197,9 +197,10 @@ pub async fn spawn_wsl_web_host(
     paths: &WslRuntimePaths,
     overlay: Option<&HostOverlay>,
     _runner: &dyn WslRunner,
+    web_port: u16,
 ) -> Result<HostHandle, String> {
     reclaim_stale_host(&host_pid_path());
-    let port = pick_port(DEFAULT_WEB_PORT)?;
+    let port = pick_port(web_port)?;
     let web_url = format!("http://127.0.0.1:{port}/");
 
     let spec = WslLaunchSpec {

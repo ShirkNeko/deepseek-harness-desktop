@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::runtime::app_data_root;
+use crate::runtime::config::DEFAULT_WEB_PORT;
 
 /// What the title-bar / window close button does after the user has chosen.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -34,6 +35,9 @@ pub struct DesktopSettings {
     pub agent_environment: AgentEnvironment,
     #[serde(default)]
     pub wsl_distro: Option<String>,
+    /// Preferred `dsh web` / desktop GUI port; `None` uses [`DEFAULT_WEB_PORT`].
+    #[serde(default)]
+    pub web_port: Option<u16>,
 }
 
 /// Path of `desktop-settings.json` beside `boot.log`.
@@ -74,6 +78,11 @@ pub fn save_to(path: &Path, settings: &DesktopSettings) -> Result<(), String> {
 /// Resolved agent runtime target from persisted settings.
 pub fn effective_agent_environment(settings: &DesktopSettings) -> AgentEnvironment {
     settings.agent_environment
+}
+
+/// Resolved `dsh web` / GUI port: the saved preference, or the default.
+pub fn effective_web_port(settings: &DesktopSettings) -> u16 {
+    settings.web_port.unwrap_or(DEFAULT_WEB_PORT)
 }
 
 #[cfg(test)]
@@ -122,6 +131,7 @@ mod tests {
                 close_action: None,
                 agent_environment: AgentEnvironment::Wsl,
                 wsl_distro: Some("Ubuntu".into()),
+                web_port: None,
             },
         )
         .unwrap();
@@ -166,6 +176,29 @@ mod tests {
         )
         .unwrap();
         assert_eq!(load_from(&path).close_action, None);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn web_port_defaults_to_3080_and_round_trips_override() {
+        use super::{effective_web_port, DEFAULT_WEB_PORT};
+        assert_eq!(effective_web_port(&DesktopSettings::default()), DEFAULT_WEB_PORT);
+        assert_eq!(DEFAULT_WEB_PORT, 3080);
+
+        let path = temp_file();
+        save_to(
+            &path,
+            &DesktopSettings {
+                web_port: Some(9000),
+                ..DesktopSettings::default()
+            },
+        )
+        .unwrap();
+        let loaded = load_from(&path);
+        assert_eq!(loaded.web_port, Some(9000));
+        assert_eq!(effective_web_port(&loaded), 9000);
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(raw.contains("webPort"));
         let _ = fs::remove_file(&path);
     }
 }

@@ -1,0 +1,46 @@
+{
+  "name": "dsh-remote-settings",
+  "version": "0.1.0",
+  "description": "A reusable DSH plugin that enables the settings/config plane for remote browsers served behind an authenticated gateway, without weakening DSH's host-side /api security fence.",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "bin": {
+    "dsh-remote-settings": "lib/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./patch": {
+      "types": "./lib/patch.d.ts",
+      "default": "./lib/patch.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.yml"
+    }
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "files": [
+    "lib/",
+    "cordis.yml",
+    "README.md",
+    "README_en.md"
+  ],
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "plugin",
+    "remote",
+    "settings",
+    "gateway"
+  ]
+}
