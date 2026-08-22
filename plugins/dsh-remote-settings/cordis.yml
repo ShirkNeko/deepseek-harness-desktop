@@ -1,0 +1,10 @@
+# dsh-remote-settings bundle patch layer.
+#
+# Inserting this plugin into a dsh profile makes settings/configurable-provider
+# pages available to remote browsers that reach dsh through an authenticated
+# gateway (e.g. dsh-passwords). It does NOT loosen dsh's host-side /api fence:
+# the privileged method set stays loopback-only for anonymous/lan callers, and
+# only a gateway that rewrites Host/Origin to loopback (authentication in front)
+# is allowed through. See README.md.
+- id: dsh-remote-settings
+  name: 'dsh-remote-settings'

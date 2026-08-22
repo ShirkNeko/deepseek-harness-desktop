@@ -44,7 +44,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             chrome::set_close_action,
             chrome::dismiss_close_prompt,
-            chrome::restart_app
+            chrome::restart_app,
+            chrome::get_web_port,
+            chrome::set_web_port,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -136,9 +138,10 @@ async fn boot_app(app: AppHandle, bundled: Option<PathBuf>) -> Result<(), String
     };
 
     let settings = desktop_settings::load();
+    let preferred_port = desktop_settings::effective_web_port(&settings);
     let runtime = match boot_kind(&settings) {
         AgentEnvironment::Windows => {
-            boot_windows_runtime(app.clone(), bundled, notify.as_ref(), Arc::clone(&progress))
+            boot_windows_runtime(app.clone(), bundled, notify.as_ref(), preferred_port, Arc::clone(&progress))
                 .await?
         }
         AgentEnvironment::Wsl => {
@@ -198,6 +201,7 @@ async fn boot_windows_runtime(
     app: AppHandle,
     bundled: Option<PathBuf>,
     notify: Option<&notify::NotifyHandle>,
+    preferred_port: u16,
     progress: Arc<dyn Fn(ProvisionEvent) + Send + Sync>,
 ) -> Result<DesktopRuntime, String> {
     let overlay_src = overlay::resolve_overlay_source(app.path().resource_dir().ok().as_deref());
@@ -268,7 +272,23 @@ async fn ensure_or_recover(
                 Err(error)
             }
         }
-    }
+    };
+
+    let overlay_src = overlay::resolve_overlay_source(app.path().resource_dir().ok().as_deref());
+    let host_overlay = notify.and_then(|notify| {
+        match overlay::install_overlay(&paths, &overlay_src, &notify.url) {
+            Ok(implanted) => Some(HostOverlay {
+                patch_file: implanted.patch_file,
+                notify_url: notify.url.clone(),
+            }),
+            Err(error) => {
+                boot_log::info(&format!("overlay skipped: {error}"));
+                None
+            }
+        }
+    });
+
+    DesktopRuntime::start(paths, host_overlay.as_ref(), preferred_port, progress).await
 }
 
 async fn boot_wsl_runtime(
@@ -319,9 +339,13 @@ async fn boot_wsl_runtime(
     });
 
     progress(ProvisionEvent::Status(i18n::t(Msg::StatusStartWeb).into()));
-    let host =
-        spawn_wsl_web_host(&wsl_paths, host_overlay.as_ref(), &runner, runtime::config::DEFAULT_WEB_PORT)
-            .await?;
+    let host = spawn_wsl_web_host(
+        &wsl_paths,
+        host_overlay.as_ref(),
+        &runner,
+        desktop_settings::effective_web_port(settings),
+    )
+    .await?;
     Ok(DesktopRuntime::start_wsl(host, wsl_paths))
 }
 

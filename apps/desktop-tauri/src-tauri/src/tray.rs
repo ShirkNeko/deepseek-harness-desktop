@@ -1,11 +1,11 @@
 //! System tray: show/hide, close-behavior, check for updates, quit.
 
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::AppHandle;
 
 use crate::chrome;
-use crate::desktop_settings::{AgentEnvironment, CloseAction};
+use crate::desktop_settings::{self, AgentEnvironment, CloseAction};
 use crate::i18n::{self, Msg};
 use crate::notify;
 use crate::runtime::boot_log;
@@ -70,6 +70,34 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     let quit = MenuItem::with_id(app, "quit", i18n::t(Msg::TrayQuit), true, None::<&str>)
         .map_err(|e| e.to_string())?;
+    // Web port submenu: shows the current port and offers common presets plus a
+    // reset to the default. Changing it takes effect on the next restart.
+    let current_port = desktop_settings::effective_web_port(&desktop_settings::load());
+    let web_port_label = i18n::tf(Msg::TrayWebPortLabel, &current_port.to_string());
+    let port_default = MenuItem::with_id(
+        app,
+        "web-port-default",
+        i18n::t(Msg::TrayWebPortDefault),
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let port_17890 = MenuItem::with_id(app, "web-port-17890", "17890", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let port_8000 = MenuItem::with_id(app, "web-port-8000", "8000", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let port_8080 = MenuItem::with_id(app, "web-port-8080", "8080", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let web_port_menu = Submenu::with_id_and_items(
+        app,
+        "web-port",
+        web_port_label,
+        true,
+        &[&port_default, &port_17890, &port_8000, &port_8080],
+    )
+    .map_err(|e| e.to_string())?;
+    let open_log = MenuItem::with_id(app, "open-log", i18n::t(Msg::TrayOpenLog), true, None::<&str>)
+        .map_err(|e| e.to_string())?;
     let menu = Menu::with_items(
         app,
         &[
@@ -79,6 +107,8 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
             &close_ask,
             &env_windows,
             &env_wsl,
+            &web_port_menu,
+            &open_log,
             &install_catalog,
             &update,
             &restart,
@@ -113,6 +143,11 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
             "env-wsl" => {
                 chrome::remember_agent_environment(app, AgentEnvironment::Wsl);
             }
+            "web-port-default" => chrome::remember_web_port(app, None),
+            "web-port-17890" => chrome::remember_web_port(app, Some(17890)),
+            "web-port-8000" => chrome::remember_web_port(app, Some(8000)),
+            "web-port-8080" => chrome::remember_web_port(app, Some(8080)),
+            "open-log" => chrome::open_boot_log(app),
             "install-catalog" => plugin_catalog::begin_from_tray(app),
             "update" => {
                 let app = app.clone();
