@@ -216,7 +216,6 @@ mod tests {
             pnpm_binary: root.join("pnpm"),
             cli_entry: root.join("bin.js"),
             harness_root: root.clone(),
-            runtime_root: root.join("runtime"),
             dsh_home: dsh_home.clone(),
         };
 

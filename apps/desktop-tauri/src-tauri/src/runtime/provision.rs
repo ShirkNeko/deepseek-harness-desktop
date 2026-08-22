@@ -31,7 +31,6 @@ pub struct RuntimePaths {
     pub pnpm_binary: PathBuf,
     pub cli_entry: PathBuf,
     pub harness_root: PathBuf,
-    pub runtime_root: PathBuf,
     pub dsh_home: PathBuf,
 }
 
@@ -120,7 +119,6 @@ pub async fn ensure_runtime(
             pnpm_binary: preferred_pnpm,
             cli_entry,
             harness_root,
-            runtime_root,
             dsh_home,
         });
     }
@@ -253,7 +251,6 @@ pub async fn ensure_runtime(
         pnpm_binary,
         cli_entry,
         harness_root,
-        runtime_root,
         dsh_home,
     })
 }
@@ -327,7 +324,6 @@ fn resolve_local_repo() -> Result<RuntimePaths, String> {
         pnpm_binary,
         cli_entry,
         harness_root,
-        runtime_root: app_data_root()?.join("runtime"),
         dsh_home,
     })
 }
@@ -419,7 +415,6 @@ pub fn try_recover_paths(bundled: Option<&Path>) -> Option<RuntimePaths> {
         pnpm_binary,
         cli_entry,
         harness_root,
-        runtime_root,
         dsh_home,
     })
 }

@@ -47,8 +47,6 @@ pub enum Msg {
     CatalogNotReady,
     CatalogFailed,
     CatalogRestarting,
-    SplashPreparing,
-    SplashBootFailed,
     StatusLocalRepo,
     StatusMatchingHome,
     StatusRuntimeReady,
@@ -174,8 +172,6 @@ fn zh(msg: Msg) -> &'static str {
         Msg::CatalogNotReady => "请等客户端启动完成后再安装插件库",
         Msg::CatalogFailed => "安装插件库失败",
         Msg::CatalogRestarting => "插件库已安装，正在重启…",
-        Msg::SplashPreparing => "正在准备运行环境…",
-        Msg::SplashBootFailed => "启动失败",
         Msg::StatusLocalRepo => "使用本地仓库…",
         Msg::StatusMatchingHome => "正在匹配已有对话与密钥…",
         Msg::StatusRuntimeReady => "运行环境已就绪",
@@ -266,8 +262,6 @@ fn en(msg: Msg) -> &'static str {
         Msg::CatalogNotReady => "Wait until the client has started, then install the plugin catalog",
         Msg::CatalogFailed => "Plugin catalog install failed",
         Msg::CatalogRestarting => "Plugin catalog installed; restarting…",
-        Msg::SplashPreparing => "Preparing the runtime…",
-        Msg::SplashBootFailed => "Startup failed",
         Msg::StatusLocalRepo => "Using the local repository…",
         Msg::StatusMatchingHome => "Matching existing sessions and credentials…",
         Msg::StatusRuntimeReady => "Runtime is ready",
@@ -347,8 +341,6 @@ mod tests {
         assert_eq!(t(Msg::TrayShow), "显示窗口");
         assert_eq!(t(Msg::TrayRestart), "重启");
         assert_eq!(t(Msg::TrayInstallCatalog), "安装插件库");
-        assert_eq!(t(Msg::SplashPreparing), "正在准备运行环境…");
-        assert_eq!(t(Msg::SplashBootFailed), "启动失败");
         assert!(t(Msg::WslMissing).contains("WSL2"));
     }
 

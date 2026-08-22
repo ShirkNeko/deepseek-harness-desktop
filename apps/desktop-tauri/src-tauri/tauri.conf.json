@@ -33,7 +33,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIyOTU4Q0I3RkU0OTUzOEMKUldTTVUwbit0NHlWSWxwMDJ2TzQreUZ4cVFqejg1R0JpYU9tdWxPQlR5L1ViSjRKaVlML2x0UXcK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE5MTQ4QTZEQUY1QkFDOTcKUldTWHJGdXZiWW9VcVdPWFBXZGhwNXc4OUEweVpTYVJZT0dkZGZZY2VuK3IrMDdkSzRUSkV5dGYK",
       "endpoints": [
         "https://github.com/Sakana-yuyu/deepseek-harness-desktop/releases/download/desktop-updater/latest.json"
       ],

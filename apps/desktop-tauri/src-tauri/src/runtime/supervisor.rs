@@ -27,7 +27,6 @@ pub struct WslSession {
 
 /// Running `dsh web` child, bound port, and verified base URL.
 pub struct HostHandle {
-    pub port: u16,
     pub web_url: String,
     /// Plugin entry ids whose load failure was bypassed through a rescue
     /// `--patch` this session; empty when the Host started clean.
@@ -177,7 +176,6 @@ pub async fn spawn_web_host(
         boot_log::info(&format!("health check passed url={web_url}"));
 
         return Ok(HostHandle {
-            port,
             web_url,
             disabled_plugins,
             wsl: Mutex::new(None),
@@ -271,7 +269,6 @@ pub async fn spawn_wsl_web_host(
     ));
 
     Ok(HostHandle {
-        port,
         web_url,
         disabled_plugins: Vec::new(),
         wsl: Mutex::new(Some(session)),
@@ -279,14 +276,6 @@ pub async fn spawn_wsl_web_host(
         #[cfg(windows)]
         job: Mutex::new(job),
     })
-}
-
-/// Parse the Linux Host pid from stderr handshake text.
-///
-/// Scans every line and returns the first that is entirely a decimal pid so a
-/// leading `wsl.exe` diagnostic does not hide `echo $$`.
-pub fn parse_linux_pid_from_stderr(stderr: &str) -> Option<u32> {
-    stderr.lines().find_map(parse_linux_pid_line)
 }
 
 fn parse_linux_pid_line(line: &str) -> Option<u32> {
@@ -648,7 +637,7 @@ fn port_free(port: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        failing_loader_entry, parse_linux_pid_from_stderr, read_linux_pid_handshake,
+        failing_loader_entry, parse_linux_pid_line, read_linux_pid_handshake,
         rescue_patch_body, wsl_stop_args,
     };
     use std::io::Read;
@@ -679,12 +668,10 @@ invalid plugin, expect function or object with an \"apply\" method, received obj
 
     #[test]
     fn parses_linux_pid_from_first_stderr_line() {
-        assert_eq!(parse_linux_pid_from_stderr("43210\nready\n"), Some(43210));
-        assert_eq!(parse_linux_pid_from_stderr("not-a-pid\n"), None);
-        assert_eq!(
-            parse_linux_pid_from_stderr("wsl: localhost proxy\n43210\nready\n"),
-            Some(43210)
-        );
+        let parse = |stderr: &str| stderr.lines().find_map(parse_linux_pid_line);
+        assert_eq!(parse("43210\nready\n"), Some(43210));
+        assert_eq!(parse("not-a-pid\n"), None);
+        assert_eq!(parse("wsl: localhost proxy\n43210\nready\n"), Some(43210));
     }
 
     #[test]

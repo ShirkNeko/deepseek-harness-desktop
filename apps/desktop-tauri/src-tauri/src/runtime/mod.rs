@@ -24,7 +24,6 @@ use wsl::WslRuntimePaths;
 
 /// Resolved Node + harness tree and the spawned Host child.
 pub struct DesktopRuntime {
-    pub paths: RuntimePaths,
     pub host: HostHandle,
     pub web_url: String,
     /// How tray `dsh plugin add` must reach the live Host profile.
@@ -66,7 +65,6 @@ impl DesktopRuntime {
         let host = supervisor::spawn_web_host(&paths, overlay, &host_path, web_port).await?;
         boot_log::info(&format!("dsh web ready url={}", host.web_url));
         Ok(Self {
-            paths: paths.clone(),
             web_url: host.web_url.clone(),
             plugin_target: PluginRunTarget::Windows {
                 node: paths.node_binary.clone(),
@@ -81,26 +79,12 @@ impl DesktopRuntime {
 
     /// Wrap a Host already spawned inside WSL.
     ///
-    /// Skips the Windows PATH bridge and Windows profile repair. `paths` is a
-    /// documented placeholder: the live Linux tree lives on WSL runtime paths
-    /// inside the supervisor session, not on Windows `RuntimePaths`.
-    /// Wrap a Host already spawned inside WSL.
-    ///
-    /// Skips the Windows PATH bridge and Windows profile repair. `paths` is a
-    /// documented placeholder: the live Linux tree lives on WSL runtime paths
-    /// inside the supervisor session, not on Windows `RuntimePaths`.
+    /// Skips the Windows PATH bridge and Windows profile repair. The live
+    /// Linux tree lives on WSL runtime paths inside the supervisor session,
+    /// not on Windows `RuntimePaths`.
     pub fn start_wsl(host: HostHandle, wsl_paths: WslRuntimePaths) -> Self {
         boot_log::info(&format!("wsl dsh web ready url={}", host.web_url));
         Self {
-            // Placeholder only — WSL Host does not consume Windows RuntimePaths.
-            paths: RuntimePaths {
-                node_binary: PathBuf::new(),
-                pnpm_binary: PathBuf::new(),
-                cli_entry: PathBuf::new(),
-                harness_root: PathBuf::new(),
-                runtime_root: PathBuf::new(),
-                dsh_home: PathBuf::new(),
-            },
             web_url: host.web_url.clone(),
             plugin_target: PluginRunTarget::Wsl(wsl_paths),
             host,
