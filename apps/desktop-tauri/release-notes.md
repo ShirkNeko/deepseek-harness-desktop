@@ -1,4 +1,4 @@
-# DeepSeek Harness Desktop 0.1.1-rc.1-0.1
+# DeepSeek Harness Desktop 0.1.1-rc.2-0.1
 
 ## English
 

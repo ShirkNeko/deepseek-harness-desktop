@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Rust/WebView2 shell over the existing `dsh web` UI. The installer ships **harness source** (no `node_modules`); first run scans the host for a compatible Node / pnpm and an existing `~/.dsh` home, downloads **build tools only** when the scan finds none, then runs `pnpm install --prod` against the bundled tree.
 
-Current desktop release: **0.1.1-rc.1-0.1**.
+Current desktop release: **0.1.1-rc.2-0.1**.
 
 ## Architecture
 
