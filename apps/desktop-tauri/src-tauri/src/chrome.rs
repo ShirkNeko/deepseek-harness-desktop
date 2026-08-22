@@ -288,10 +288,18 @@ pub fn open_boot_log(app: &AppHandle) {
 }
 
 /// Open a path with the platform default viewer (detached; never blocks the UI).
+///
+/// On Windows this uses `rundll32 url.dll,FileProtocolHandler` rather than
+/// `cmd /C start`: `start` is a `cmd` builtin and re-parses its arguments
+/// through `cmd`'s own quoting rules, which mangles a path containing a space
+/// (the app-data directory is "DeepSeek Harness"). The file-protocol handler
+/// is a real executable, so `Command`'s normal argument quoting works, and it
+/// opens a file with its default app or a folder in Explorer.
 #[cfg(target_os = "windows")]
 fn open_with_os(path: &Path) -> Result<(), String> {
-    Command::new("cmd")
-        .args(["/C", "start", "", &format!("\"{}\"", path.display())])
+    let path_str = path.display().to_string();
+    Command::new("rundll32.exe")
+        .args(["url.dll,FileProtocolHandler", path_str.as_str()])
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())
