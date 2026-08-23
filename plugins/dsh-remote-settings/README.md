@@ -48,6 +48,16 @@ if (me.role !== 'admin' && !folderAllowed(real, perms.allowed_folders)) {
 - 保留**原文件备份 + sha256 哈希元数据**，`rollback` 永远不会把另一个版本的文件恢复回来。
 - Gateway 补丁自动扫描所有 `dsh-passwords` 副本并应用权限绕过补丁。
 
+### 3. dsh-passwords 客户端 / 状态补丁
+
+对 `dsh-passwords` 再打三组补丁（同样幂等、可回退）：
+
+- **深色模式（`dist/client.js`）**：dsh-passwords 设置卡片 CSS 把状态胶囊、头像/按钮对比色、开关轨道、输入框 hover/focus 都写死为浅色。dsh 的主题呈现器在深色时给 `body` 打 `data-ds-dark-theme`，本插件在卡片 CSS 末尾追加一组 `body[data-ds-dark-theme]` 覆盖，让这些固定浅色随主题适配，其余 token 驱动的颜色不动。
+- **`/patch/status` 发现（`dist/patch.js`）**：dsh-passwords 的 `findDshRoot()` 只查 `npm root -g`、`cwd` 向上与 `/usr/local`，桌面版（dsh 包提升到 dsh home / profile 的 `node_modules`）找不到 dsh 根，于是 `/api/dsh-passwords/patch/status` 返回 `null`，卡片显示"状态未知"。本插件给 `findDshRoot()` 追加 dsh home / `profiles` 扫描，使其在桌面布局下也能找到 dsh 根、返回真实补丁状态。
+- **"全部禁用"保存（`dist/gateway.js`）**：工作区开关把所有工作区关掉时客户端发 `allowedFolders: ['__deny__']`（dsh-passwords 的"全部禁用"哨兵），但 `/gateway/api/permissions` 的校验把 `__deny__` 当非法路径拒绝，导致保存返回 400、权限草稿回退。本插件给该校验豁免 `__deny__` 哨兵，使"禁用全部工作区"能保存。
+
+> 说明：`/patch/status` 现在会返回真实状态（例如 dsh-passwords 自己的侧栏搜索子补丁未打时显示"未生效"）。要让该卡显示"已生效"，还需 dsh-passwords 的 workspaceSearch 补丁也被应用——那属于 dsh-passwords 自身的另一组补丁，不在本插件范围。
+
 ## 安装
 
 本插件作为 DSH 的 patch-layer bundle 提供。把它加入 dsh profile（以 `web` 为例），用 `link:` 指向本目录：

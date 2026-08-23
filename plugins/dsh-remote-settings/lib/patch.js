@@ -673,6 +673,255 @@ export function rollbackGateway(anchors) {
   return { rolledBack, noBackup, targets: [...targets], details }
 }
 
+// ── dsh-passwords client card patches ──────────────────────────────────────
+// The dsh-passwords settings card ships a CSS block (compiled into dist/client.js)
+// whose status pills, avatar/button contrast, switch track and input hover/focus
+// colors are hardcoded light-only. dsh's theme presenter sets `body[data-ds-dark-theme]`
+// when the active color scheme is dark (and `color-scheme` on <html>), so the card
+// looks wrong in dark mode. This appends a `body[data-ds-dark-theme]` override block
+// scoped to the card classes, leaving the token-driven colors untouched.
+export const DSPW_CLIENT_PACKAGE = 'dsh-passwords'
+export const DSPW_CLIENT_FILE = path.join('dist', 'client.js')
+
+/** Unique anchor: the last standalone rule before the reduced-motion / width media queries. */
+const DSPW_DARK_ANCHOR = '.dshpw-ok{color:#10815f;font-size:12px}'
+/** Dark-mode override block. Pure CSS; every rule is a `body[data-ds-dark-theme]` descendant. */
+const DSPW_DARK_BLOCK = [
+  'body[data-ds-dark-theme] .dshpw-status-neutral{background:#2a3239;color:var(--dshpw-muted)}',
+  'body[data-ds-dark-theme] .dshpw-status-success{background:#12362b;color:#6fd9b0}',
+  'body[data-ds-dark-theme] .dshpw-status-warning{background:#3a2f14;color:#ecc06a}',
+  'body[data-ds-dark-theme] .dshpw-status-danger{background:#3a1f1e;color:#ff9a92}',
+  'body[data-ds-dark-theme] .dshpw-avatar{background:#263038;color:#fff}',
+  'body[data-ds-dark-theme] .dshpw-btn{background:#8b98a3;color:#10181d}',
+  'body[data-ds-dark-theme] .dshpw-btn.danger{border-color:#e56a62;color:#ff9a92}',
+  'body[data-ds-dark-theme] .dshpw-btn.danger:hover:not(:disabled){background:#3a1f1e}',
+  'body[data-ds-dark-theme] .dshpw-switch-track{background:#3a424a}',
+  'body[data-ds-dark-theme] .dshpw-input:hover{border-color:#4a545c;background:#1c242b}',
+  'body[data-ds-dark-theme] .dshpw-input:focus{border-color:var(--dshpw-accent);background:#1c242b}',
+  'body[data-ds-dark-theme] .dshpw-error{color:#ff9a92}',
+  'body[data-ds-dark-theme] .dshpw-ok{color:#6fd9b0}',
+  'body[data-ds-dark-theme] .dshpw-badge{color:#6fd9b0;background:#12362b}',
+  'body[data-ds-dark-theme] .dshpw-badge.admin{color:#ecc06a;background:#3a2f14}',
+].join('\n')
+
+function hasDspwDarkOverride(content) {
+  return content.includes('body[data-ds-dark-theme] .dshpw-status-neutral')
+}
+
+function transformDspwClient(content) {
+  if (!content.includes(DSPW_DARK_ANCHOR)) return { content, count: 0 }
+  return {
+    content: content.replace(DSPW_DARK_ANCHOR, `${DSPW_DARK_ANCHOR}\n${DSPW_DARK_BLOCK}`),
+    count: 1,
+  }
+}
+
+function patchDspwClientFileAt(target) {
+  if (!target || !existsSync(target)) return { outcome: 'missing', replaced: 0 }
+  const original = readFileSync(target, 'utf8')
+  if (hasDspwDarkOverride(original)) return { outcome: 'unchanged', replaced: 0 }
+  const { content: patched, count } = transformDspwClient(original)
+  if (count === 0) return { outcome: 'unchanged', replaced: 0 }
+  ensureOriginalBackup(target, original, patched)
+  writeFileSync(target, patched, 'utf8')
+  return { outcome: 'applied', replaced: count }
+}
+
+function statusDspwClientAt(target) {
+  if (!target || !existsSync(target)) return { found: false, enabled: false, replaced: 0 }
+  const content = readFileSync(target, 'utf8')
+  return { found: true, enabled: hasDspwDarkOverride(content), replaced: hasDspwDarkOverride(content) ? 0 : 1 }
+}
+
+export function patchDspwClient(anchors) {
+  const targets = collectAllTargets(DSPW_CLIENT_PACKAGE, DSPW_CLIENT_FILE, anchors, [])
+  let applied = 0
+  let unchanged = 0
+  let missing = 0
+  const details = []
+  for (const target of targets) {
+    const result = patchDspwClientFileAt(target)
+    details.push({ target, ...result })
+    if (result.outcome === 'applied') applied += 1
+    else if (result.outcome === 'unchanged') unchanged += 1
+    else missing += 1
+  }
+  return { targets: [...targets], applied, unchanged, missing, details }
+}
+
+export function statusDspwClient(anchors) {
+  return collectAllTargets(DSPW_CLIENT_PACKAGE, DSPW_CLIENT_FILE, anchors, []).map((target) => ({
+    target,
+    ...statusDspwClientAt(target),
+  }))
+}
+
+export function rollbackDspwClient(anchors) {
+  const targets = collectAllTargets(DSPW_CLIENT_PACKAGE, DSPW_CLIENT_FILE, anchors, [])
+  let rolledBack = 0
+  let noBackup = 0
+  const details = []
+  for (const target of targets) {
+    const result = rollbackPatchAt(target)
+    details.push({ target, result })
+    if (result === 'rolled-back') rolledBack += 1
+    else if (result === 'no-backup') noBackup += 1
+  }
+  return { rolledBack, noBackup, targets: [...targets], details }
+}
+
+// ── dsh-passwords patch/status discovery fix ───────────────────────────────
+// dsh-passwords' /api/dsh-passwords/patch/status reports "未知" when it cannot
+// locate a dsh install root: its findDshRoot() only checks `npm root -g`, the
+// cwd walk-up and /usr/local, so a desktop setup (dsh packages hoisted under a
+// dsh home / profile node_modules) returns null and the card shows "unknown".
+// This appends a dsh-home/"profiles" scan so it finds the desktop dsh root.
+export const DSPW_PATCH_PACKAGE = 'dsh-passwords'
+export const DSPW_PATCH_FILE = path.join('dist', 'patch.js')
+
+const DSPW_FINDROOT_IMPORT_ANCHOR = "import { readFileSync, writeFileSync, existsSync } from 'node:fs';"
+const DSPW_FINDROOT_IMPORT_TO = "import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';"
+const DSPW_FINDROOT_ANCHOR = "    for (const candidate of [\n        '/usr/local/lib/node_modules/@deepseek-ai/dsh',"
+const DSPW_FINDROOT_MARKER = 'dshpw-remote-settings: dsh home/profiles node_modules'
+const DSPW_FINDROOT_SCAN = `    // ${DSPW_FINDROOT_MARKER}\n    const dshHomes = [\n        process.env.USERPROFILE && path.join(process.env.USERPROFILE, '.dsh'),\n        process.env.HOME && path.join(process.env.HOME, '.dsh'),\n        process.env.APPDATA && path.join(process.env.APPDATA, 'DeepSeek Harness'),\n        process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'DeepSeek Harness'),\n    ].filter(Boolean);\n    for (const home of dshHomes) {\n        const direct = path.join(home, 'node_modules', '@deepseek-ai', 'dsh');\n        if (existsSync(direct))\n            return direct;\n        const profiles = path.join(home, 'profiles');\n        if (existsSync(profiles)) {\n            const hoisted = path.join(profiles, 'node_modules', '@deepseek-ai', 'dsh');\n            if (existsSync(hoisted))\n                return hoisted;\n            for (const profile of readdirSync(profiles)) {\n                const candidate = path.join(profiles, profile, 'node_modules', '@deepseek-ai', 'dsh');\n                if (existsSync(candidate))\n                    return candidate;\n            }\n        }\n    }\n    `
+
+function hasDspwFindRootPatch(content) {
+  return content.includes(DSPW_FINDROOT_MARKER)
+}
+
+function patchDspwPatchFileAt(target) {
+  if (!target || !existsSync(target)) return { outcome: 'missing', replaced: 0 }
+  const original = readFileSync(target, 'utf8')
+  if (hasDspwFindRootPatch(original)) return { outcome: 'unchanged', replaced: 0 }
+  if (!original.includes(DSPW_FINDROOT_IMPORT_ANCHOR) || !original.includes(DSPW_FINDROOT_ANCHOR)) {
+    return { outcome: 'unchanged', replaced: 0 }
+  }
+  let patched = original.replace(DSPW_FINDROOT_IMPORT_ANCHOR, DSPW_FINDROOT_IMPORT_TO)
+  patched = patched.replace(DSPW_FINDROOT_ANCHOR, `${DSPW_FINDROOT_SCAN}${DSPW_FINDROOT_ANCHOR}`)
+  ensureOriginalBackup(target, original, patched)
+  writeFileSync(target, patched, 'utf8')
+  return { outcome: 'applied', replaced: 1 }
+}
+
+function statusDspwPatchAt(target) {
+  if (!target || !existsSync(target)) return { found: false, enabled: false, replaced: 0 }
+  const content = readFileSync(target, 'utf8')
+  return { found: true, enabled: hasDspwFindRootPatch(content), replaced: hasDspwFindRootPatch(content) ? 0 : 1 }
+}
+
+export function patchDspwPatch(anchors) {
+  const targets = collectAllTargets(DSPW_PATCH_PACKAGE, DSPW_PATCH_FILE, anchors, [])
+  let applied = 0
+  let unchanged = 0
+  let missing = 0
+  const details = []
+  for (const target of targets) {
+    const result = patchDspwPatchFileAt(target)
+    details.push({ target, ...result })
+    if (result.outcome === 'applied') applied += 1
+    else if (result.outcome === 'unchanged') unchanged += 1
+    else missing += 1
+  }
+  return { targets: [...targets], applied, unchanged, missing, details }
+}
+
+export function statusDspwPatch(anchors) {
+  return collectAllTargets(DSPW_PATCH_PACKAGE, DSPW_PATCH_FILE, anchors, []).map((target) => ({
+    target,
+    ...statusDspwPatchAt(target),
+  }))
+}
+
+export function rollbackDspwPatch(anchors) {
+  const targets = collectAllTargets(DSPW_PATCH_PACKAGE, DSPW_PATCH_FILE, anchors, [])
+  let rolledBack = 0
+  let noBackup = 0
+  const details = []
+  for (const target of targets) {
+    const result = rollbackPatchAt(target)
+    details.push({ target, result })
+    if (result === 'rolled-back') rolledBack += 1
+    else if (result === 'no-backup') noBackup += 1
+  }
+  return { rolledBack, noBackup, targets: [...targets], details }
+}
+
+// ── dsh-passwords /gateway/api/permissions "deny all" save fix ─────────────
+// The UI's workspace toggles send `allowedFolders: ['__deny__']` when every
+// workspace is disabled, but the server's folder validation rejects `__deny__`
+// (it is not an absolute path), so saving "no workspaces" returns 400 and the
+// draft reverts. This exempts the `__deny__` sentinel from that validation.
+export const DSPW_PERMS_PACKAGE = 'dsh-passwords'
+export const DSPW_PERMS_FILE = path.join('dist', 'gateway.js')
+
+const DSPW_PERMS_ANCHOR1 = "            return (trimmed === '' ||"
+const DSPW_PERMS_ANCHOR2 = "            /^[a-z]:\\/$/i.test(normalizePath(trimmed)));"
+const DSPW_PERMS_MARKER = 'dshpw-remote-settings: allow __deny__ in allowedFolders'
+const DSPW_PERMS_TO1 = "            return (trimmed !== '__deny__' && (trimmed === '' ||"
+const DSPW_PERMS_TO2 = "            /^[a-z]:\\/$/i.test(normalizePath(trimmed))));"
+
+function hasDspwPermsPatch(content) {
+  return content.includes(DSPW_PERMS_MARKER)
+}
+
+function patchDspwPermsFileAt(target) {
+  if (!target || !existsSync(target)) return { outcome: 'missing', replaced: 0 }
+  const original = readFileSync(target, 'utf8')
+  if (hasDspwPermsPatch(original)) return { outcome: 'unchanged', replaced: 0 }
+  if (!original.includes(DSPW_PERMS_ANCHOR1) || !original.includes(DSPW_PERMS_ANCHOR2)) {
+    return { outcome: 'unchanged', replaced: 0 }
+  }
+  const patched = original
+    .replace(DSPW_PERMS_ANCHOR1, `            // ${DSPW_PERMS_MARKER}\n${DSPW_PERMS_TO1}`)
+    .replace(DSPW_PERMS_ANCHOR2, DSPW_PERMS_TO2)
+  ensureOriginalBackup(target, original, patched)
+  writeFileSync(target, patched, 'utf8')
+  return { outcome: 'applied', replaced: 2 }
+}
+
+function statusDspwPermsAt(target) {
+  if (!target || !existsSync(target)) return { found: false, enabled: false, replaced: 0 }
+  const content = readFileSync(target, 'utf8')
+  return { found: true, enabled: hasDspwPermsPatch(content), replaced: hasDspwPermsPatch(content) ? 0 : 1 }
+}
+
+export function patchDspwPerms(anchors) {
+  const targets = collectAllTargets(DSPW_PERMS_PACKAGE, DSPW_PERMS_FILE, anchors, [])
+  let applied = 0
+  let unchanged = 0
+  let missing = 0
+  const details = []
+  for (const target of targets) {
+    const result = patchDspwPermsFileAt(target)
+    details.push({ target, ...result })
+    if (result.outcome === 'applied') applied += 1
+    else if (result.outcome === 'unchanged') unchanged += 1
+    else missing += 1
+  }
+  return { targets: [...targets], applied, unchanged, missing, details }
+}
+
+export function statusDspwPerms(anchors) {
+  return collectAllTargets(DSPW_PERMS_PACKAGE, DSPW_PERMS_FILE, anchors, []).map((target) => ({
+    target,
+    ...statusDspwPermsAt(target),
+  }))
+}
+
+export function rollbackDspwPerms(anchors) {
+  const targets = collectAllTargets(DSPW_PERMS_PACKAGE, DSPW_PERMS_FILE, anchors, [])
+  let rolledBack = 0
+  let noBackup = 0
+  const details = []
+  for (const target of targets) {
+    const result = rollbackPatchAt(target)
+    details.push({ target, result })
+    if (result === 'rolled-back') rolledBack += 1
+    else if (result === 'no-backup') noBackup += 1
+  }
+  return { rolledBack, noBackup, targets: [...targets], details }
+}
+
 export default {
   DEFAULT_PACKAGE,
   DEFAULT_RELATIVE,
@@ -696,4 +945,19 @@ export default {
   patchGateway,
   statusGateway,
   rollbackGateway,
+  DSPW_CLIENT_PACKAGE,
+  DSPW_CLIENT_FILE,
+  patchDspwClient,
+  statusDspwClient,
+  rollbackDspwClient,
+  DSPW_PATCH_PACKAGE,
+  DSPW_PATCH_FILE,
+  patchDspwPatch,
+  statusDspwPatch,
+  rollbackDspwPatch,
+  DSPW_PERMS_PACKAGE,
+  DSPW_PERMS_FILE,
+  patchDspwPerms,
+  statusDspwPerms,
+  rollbackDspwPerms,
 }

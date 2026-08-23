@@ -18,6 +18,15 @@ import {
   patchGateway,
   rollbackGateway,
   statusGateway,
+  patchDspwClient,
+  rollbackDspwClient,
+  statusDspwClient,
+  patchDspwPatch,
+  rollbackDspwPatch,
+  statusDspwPatch,
+  patchDspwPerms,
+  rollbackDspwPerms,
+  statusDspwPerms,
 } from './patch.js'
 
 const command = process.argv[2] ?? 'patch'
@@ -66,19 +75,94 @@ function reportGatewayStatus(copies) {
   }
 }
 
+function reportDspwClientPatch(result) {
+  console.log(`[dsh-remote-settings-dspw-client] patch: ${result.applied} applied, ${result.unchanged} unchanged, ${result.missing} missing / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.outcome}  ${detail.target}`)
+  }
+}
+
+function reportDspwClientRollback(result) {
+  console.log(`[dsh-remote-settings-dspw-client] rollback: ${result.rolledBack} restored, ${result.noBackup} no-backup / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.result}  ${detail.target}`)
+  }
+}
+
+function reportDspwClientStatus(copies) {
+  const enabled = copies.filter(copy => copy.enabled)
+  console.log(`[dsh-remote-settings-dspw-client] ${copies.length} copy/copies found, ${enabled.length} enabled`)
+  for (const copy of copies) {
+    console.log(`  ${copy.enabled ? 'enabled' : 'disabled'}  ${copy.target}  (${copy.replaced} dark-missing)`)
+  }
+}
+
+function reportDspwPatchStatus(copies) {
+  const enabled = copies.filter(copy => copy.enabled)
+  console.log(`[dsh-remote-settings-dspw-patch] ${copies.length} copy/copies found, ${enabled.length} enabled`)
+  for (const copy of copies) {
+    console.log(`  ${copy.enabled ? 'enabled' : 'disabled'}  ${copy.target}  (${copy.replaced} findroot-missing)`)
+  }
+}
+
+function reportDspwPatchApply(result) {
+  console.log(`[dsh-remote-settings-dspw-patch] patch: ${result.applied} applied, ${result.unchanged} unchanged, ${result.missing} missing / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.outcome}  ${detail.target}`)
+  }
+}
+
+function reportDspwPatchRollback(result) {
+  console.log(`[dsh-remote-settings-dspw-patch] rollback: ${result.rolledBack} restored, ${result.noBackup} no-backup / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.result}  ${detail.target}`)
+  }
+}
+
+function reportDspwPermsStatus(copies) {
+  const enabled = copies.filter(copy => copy.enabled)
+  console.log(`[dsh-remote-settings-dspw-perms] ${copies.length} copy/copies found, ${enabled.length} enabled`)
+  for (const copy of copies) {
+    console.log(`  ${copy.enabled ? 'enabled' : 'disabled'}  ${copy.target}  (${copy.replaced} deny-rejected)`)
+  }
+}
+
+function reportDspwPermsApply(result) {
+  console.log(`[dsh-remote-settings-dspw-perms] patch: ${result.applied} applied, ${result.unchanged} unchanged, ${result.missing} missing / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.outcome}  ${detail.target}`)
+  }
+}
+
+function reportDspwPermsRollback(result) {
+  console.log(`[dsh-remote-settings-dspw-perms] rollback: ${result.rolledBack} restored, ${result.noBackup} no-backup / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.result}  ${detail.target}`)
+  }
+}
+
 switch (command) {
   case 'patch':
     reportPatch(applyRemoteSettingsPatchAll())
     reportGatewayPatch(patchGateway())
+    reportDspwClientPatch(patchDspwClient())
+    reportDspwPatchApply(patchDspwPatch())
+    reportDspwPermsApply(patchDspwPerms())
     break
   case 'undo':
   case 'rollback':
     reportRollback(rollbackRemoteSettingsPatchAll())
     reportGatewayRollback(rollbackGateway())
+    reportDspwClientRollback(rollbackDspwClient())
+    reportDspwPatchRollback(rollbackDspwPatch())
+    reportDspwPermsRollback(rollbackDspwPerms())
     break
   case 'status':
     reportStatus(patchStatusAll())
     reportGatewayStatus(statusGateway())
+    reportDspwClientStatus(statusDspwClient())
+    reportDspwPatchStatus(statusDspwPatch())
+    reportDspwPermsStatus(statusDspwPerms())
     break
   case 'gateway-patch':
     reportGatewayPatch(patchGateway())
@@ -90,7 +174,37 @@ switch (command) {
   case 'gateway-status':
     reportGatewayStatus(statusGateway())
     break
+  case 'dspw-client-patch':
+    reportDspwClientPatch(patchDspwClient())
+    break
+  case 'dspw-client-undo':
+  case 'dspw-client-rollback':
+    reportDspwClientRollback(rollbackDspwClient())
+    break
+  case 'dspw-client-status':
+    reportDspwClientStatus(statusDspwClient())
+    break
+  case 'dspw-patch-patch':
+    reportDspwPatchApply(patchDspwPatch())
+    break
+  case 'dspw-patch-undo':
+  case 'dspw-patch-rollback':
+    reportDspwPatchRollback(rollbackDspwPatch())
+    break
+  case 'dspw-patch-status':
+    reportDspwPatchStatus(statusDspwPatch())
+    break
+  case 'dspw-perms-patch':
+    reportDspwPermsApply(patchDspwPerms())
+    break
+  case 'dspw-perms-undo':
+  case 'dspw-perms-rollback':
+    reportDspwPermsRollback(rollbackDspwPerms())
+    break
+  case 'dspw-perms-status':
+    reportDspwPermsStatus(statusDspwPerms())
+    break
   default:
-    console.log('Usage: node lib/install.js <patch|undo|status|gateway-patch|gateway-undo|gateway-status>')
+    console.log('Usage: node lib/install.js <patch|undo|status|gateway-patch|gateway-undo|gateway-status|dspw-client-patch|dspw-client-undo|dspw-client-status|dspw-patch-patch|dspw-patch-undo|dspw-patch-status|dspw-perms-patch|dspw-perms-undo|dspw-perms-status>')
     process.exitCode = 1
 }

@@ -23,6 +23,21 @@ import {
   patchGateway,
   statusGateway,
   rollbackGateway,
+  DSPW_CLIENT_PACKAGE,
+  DSPW_CLIENT_FILE,
+  patchDspwClient,
+  statusDspwClient,
+  rollbackDspwClient,
+  DSPW_PATCH_PACKAGE,
+  DSPW_PATCH_FILE,
+  patchDspwPatch,
+  statusDspwPatch,
+  rollbackDspwPatch,
+  DSPW_PERMS_PACKAGE,
+  DSPW_PERMS_FILE,
+  patchDspwPerms,
+  statusDspwPerms,
+  rollbackDspwPerms,
   defaultAnchors,
   profileAnchors,
   fsPathFromBaseUrl,
@@ -305,5 +320,106 @@ test('cordis apply() converts baseUrl and patches the gateway at boot', () => {
   assert.ok(gwContent.includes("me.role !== 'admin' && !folderAllowed(real, perms.allowed_folders)"))
   const clientContent = readFileSync(path.join(clientRoot, DEFAULT_RELATIVE), 'utf8')
   assert.equal(clientContent.includes('connection.isLoopback ? "host" : "memory"'), false)
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('dsh-passwords client dark-mode patch appends a body[data-ds-dark-theme] override (idempotent, reversible)', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-dspw-client-'))
+  const pkgDir = path.join(root, 'node_modules', 'dsh-passwords')
+  mkdirSync(path.dirname(path.join(pkgDir, DSPW_CLIENT_FILE)), { recursive: true })
+  writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: GATEWAY_PACKAGE }))
+  const client =
+    'var CSS=".dshpw-card{color:#172026}.dshpw-status-neutral{background:#eef2f3;color:var(--dshpw-muted)}' +
+    '.dshpw-ok{color:#10815f;font-size:12px}";module.exports={};'
+  writeFileSync(path.join(pkgDir, DSPW_CLIENT_FILE), client)
+
+  const target = path.join(pkgDir, DSPW_CLIENT_FILE)
+  const before = statusDspwClient([root])
+  assert.equal(before[0].enabled, false)
+
+  const patched = patchDspwClient([root])
+  assert.equal(patched.applied, 1)
+  const content = readFileSync(target, 'utf8')
+  assert.ok(content.includes('body[data-ds-dark-theme] .dshpw-status-neutral{background:#2a3239'))
+  assert.ok(statusDspwClient([root])[0].enabled)
+
+  const again = patchDspwClient([root])
+  assert.equal(again.unchanged, 1)
+
+  const rolled = rollbackDspwClient([root])
+  assert.equal(rolled.rolledBack, 1)
+  assert.equal(readFileSync(target, 'utf8'), client)
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('dsh-passwords findDshRoot patch adds a dsh home/profiles scan (idempotent, reversible)', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-dspw-patch-'))
+  const pkgDir = path.join(root, 'node_modules', 'dsh-passwords')
+  mkdirSync(path.dirname(path.join(pkgDir, DSPW_PATCH_FILE)), { recursive: true })
+  writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: GATEWAY_PACKAGE }))
+  const patchjs =
+    "import { readFileSync, writeFileSync, existsSync } from 'node:fs';\n" +
+    "import path from 'node:path';\n" +
+    'export function findDshRoot(explicit) {\n' +
+    "  if (explicit) return existsSync(explicit) ? explicit : null;\n" +
+    "    for (const candidate of [\n        '/usr/local/lib/node_modules/@deepseek-ai/dsh',\n        '/usr/lib/node_modules/@deepseek-ai/dsh',\n    ]) {\n" +
+    '    if (existsSync(candidate)) return candidate;\n' +
+    '  }\n' +
+    '  return null;\n' +
+    '}\n'
+  writeFileSync(path.join(pkgDir, DSPW_PATCH_FILE), patchjs)
+
+  const target = path.join(pkgDir, DSPW_PATCH_FILE)
+  assert.equal(statusDspwPatch([root])[0].enabled, false)
+  const patched = patchDspwPatch([root])
+  assert.equal(patched.applied, 1)
+  const content = readFileSync(target, 'utf8')
+  assert.ok(content.includes('dshpw-remote-settings: dsh home/profiles node_modules'))
+  assert.ok(content.includes('readdirSync'))
+  assert.ok(statusDspwPatch([root])[0].enabled)
+  const again = patchDspwPatch([root])
+  assert.equal(again.unchanged, 1)
+  const rolled = rollbackDspwPatch([root])
+  assert.equal(rolled.rolledBack, 1)
+  assert.equal(readFileSync(target, 'utf8'), patchjs)
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('dsh-passwords permissions patch allows the __deny__ sentinel to be saved', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-dspw-perms-'))
+  const pkgDir = path.join(root, 'node_modules', 'dsh-passwords')
+  mkdirSync(path.dirname(path.join(pkgDir, DSPW_PERMS_FILE)), { recursive: true })
+  writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: GATEWAY_PACKAGE }))
+  const gateway =
+    "        const allowedFolders = stringArray(body.allowedFolders);\n" +
+    "        if (allowedFolders.some((folder) => {\n" +
+    "            const trimmed = folder.trim().replace(/\\\\/g, '/');\n" +
+    "            return (trimmed === '' ||\n" +
+    "                trimmed === '.' ||\n" +
+    "                trimmed === '/' ||\n" +
+    "                (!(trimmed.startsWith('/') || /^[A-Za-z]:\\//.test(trimmed))) ||\n" +
+    "                /(^|\\/)\\.\\.?($|\\/)/.test(trimmed) ||\n" +
+    "                normalizePath(trimmed) === '/' ||\n" +
+    "                normalizePath(trimmed) === '.' ||\n" +
+    "                /^[a-z]:\\/$/i.test(normalizePath(trimmed)));\n" +
+    "        })) {\n" +
+    "            res.status(400).json({ ok: false, error: 'bad' });\n" +
+    "            return;\n" +
+    "        }\n"
+  writeFileSync(path.join(pkgDir, DSPW_PERMS_FILE), gateway)
+
+  const target = path.join(pkgDir, DSPW_PERMS_FILE)
+  assert.equal(statusDspwPerms([root])[0].enabled, false)
+  const patched = patchDspwPerms([root])
+  assert.equal(patched.applied, 1)
+  const content = readFileSync(target, 'utf8')
+  assert.ok(content.includes('allow __deny__ in allowedFolders'))
+  assert.ok(content.includes("trimmed !== '__deny__' && (trimmed === '' ||"))
+  assert.ok(statusDspwPerms([root])[0].enabled)
+  const again = patchDspwPerms([root])
+  assert.equal(again.unchanged, 1)
+  const rolled = rollbackDspwPerms([root])
+  assert.equal(rolled.rolledBack, 1)
+  assert.equal(readFileSync(target, 'utf8'), gateway)
   rmSync(root, { recursive: true, force: true })
 })

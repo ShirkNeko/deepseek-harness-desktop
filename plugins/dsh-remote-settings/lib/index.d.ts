@@ -30,6 +30,24 @@ export interface RemoteSettingsService {
   gatewayApply(): unknown
   /** Restore every matched dsh-passwords gateway copy (the uninstall path). */
   gatewayRollback(): unknown
+  /** Status of every matched dsh-passwords client-card copy (dark-mode patch). */
+  dspwClientStatus(): Array<{ target: string; found: boolean; enabled: boolean; replaced: number }>
+  /** Patch every matched dsh-passwords client-card copy (idempotent). */
+  dspwClientApply(): unknown
+  /** Restore every matched dsh-passwords client-card copy (the uninstall path). */
+  dspwClientRollback(): unknown
+  /** Status of every matched dsh-passwords patch.js copy (findDshRoot fix). */
+  dspwPatchStatus(): Array<{ target: string; found: boolean; enabled: boolean; replaced: number }>
+  /** Patch every matched dsh-passwords patch.js copy (idempotent). */
+  dspwPatchApply(): unknown
+  /** Restore every matched dsh-passwords patch.js copy (the uninstall path). */
+  dspwPatchRollback(): unknown
+  /** Status of every matched dsh-passwords gateway copy (permissions __deny__ fix). */
+  dspwPermsStatus(): Array<{ target: string; found: boolean; enabled: boolean; replaced: number }>
+  /** Patch every matched dsh-passwords gateway copy (idempotent). */
+  dspwPermsApply(): unknown
+  /** Restore every matched dsh-passwords gateway copy (the uninstall path). */
+  dspwPermsRollback(): unknown
 }
 
 declare module '@deepseek-ai/cordis' {
