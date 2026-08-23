@@ -637,7 +637,7 @@ fn port_free(port: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        failing_loader_entry, parse_linux_pid_line, read_linux_pid_handshake,
+        failing_loader_entry, parse_linux_pid_from_stderr, read_linux_pid_handshake,
         rescue_patch_body, wsl_stop_args,
     };
     use std::io::Read;
@@ -668,10 +668,12 @@ invalid plugin, expect function or object with an \"apply\" method, received obj
 
     #[test]
     fn parses_linux_pid_from_first_stderr_line() {
-        let parse = |stderr: &str| stderr.lines().find_map(parse_linux_pid_line);
-        assert_eq!(parse("43210\nready\n"), Some(43210));
-        assert_eq!(parse("not-a-pid\n"), None);
-        assert_eq!(parse("wsl: localhost proxy\n43210\nready\n"), Some(43210));
+        assert_eq!(parse_linux_pid_from_stderr("43210\nready\n"), Some(43210));
+        assert_eq!(parse_linux_pid_from_stderr("not-a-pid\n"), None);
+        assert_eq!(
+            parse_linux_pid_from_stderr("wsl: localhost proxy\n43210\nready\n"),
+            Some(43210)
+        );
     }
 
     #[test]

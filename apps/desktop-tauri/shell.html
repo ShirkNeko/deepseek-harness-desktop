@@ -193,6 +193,23 @@
       color: var(--dsw-alias-label-primary-foreground);
     }
     .btn.primary:hover { background: var(--dsw-alias-button-primary-hover); }
+    .port-field {
+      display: flex;
+      margin: 16px 24px 0;
+    }
+    .port-field input {
+      width: 100%;
+      height: 40px;
+      border: 1px solid var(--dsw-alias-border-l2);
+      border-radius: 12px;
+      background: transparent;
+      color: var(--dsw-alias-label-primary);
+      padding: 0 14px;
+      font: inherit;
+      font-size: 14px;
+      outline: none;
+    }
+    .port-field input:focus { border-color: var(--dsw-alias-label-secondary); }
   </style>
 </head>
 <body>
@@ -222,6 +239,27 @@
       <div class="modal-footer">
         <button type="button" class="btn outline" id="close-exit" data-i18n="shell.exit">退出程序</button>
         <button type="button" class="btn primary" id="close-minimize" data-i18n="shell.minimizeTray">最小化到托盘</button>
+      </div>
+    </div>
+  </div>
+  <div id="web-port-prompt" class="modal" hidden>
+    <div class="modal-mask" data-dismiss-port></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="port-title">
+      <div class="modal-header">
+        <h2 id="port-title" data-i18n="shell.portTitle">设置 Web 端口</h2>
+        <button type="button" class="modal-x" data-dismiss-port data-i18n-aria="shell.cancel" aria-label="取消">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M3 3 L11 11 M11 3 L3 11" stroke="currentColor" stroke-width="1.4"/>
+          </svg>
+        </button>
+      </div>
+      <p class="modal-desc" data-i18n="shell.portDesc">输入 1–65535 之间的端口号，应用后将立即重启生效。</p>
+      <div class="port-field">
+        <input id="port-input" type="number" min="1" max="65535" step="1" inputmode="numeric" spellcheck="false" />
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn outline" data-dismiss-port data-i18n="shell.cancel">取消</button>
+        <button type="button" class="btn primary" id="port-apply" data-i18n="shell.portApply">应用并重启</button>
       </div>
     </div>
   </div>
@@ -285,6 +323,42 @@
     window.__DSH_CLOSE_PROMPT__ = {
       show() { setClosePrompt(true) },
       hide() { setClosePrompt(false) },
+    }
+
+    const portPrompt = document.getElementById('web-port-prompt')
+    const portInput = document.getElementById('port-input')
+    function setPortPrompt(open) {
+      portPrompt.hidden = !open
+      if (!open) portInput.value = ''
+    }
+    function applyWebPort() {
+      const raw = portInput.value.trim()
+      const value = Number(raw)
+      if (!/^\d+$/.test(raw) || !Number.isInteger(value) || value < 1 || value > 65535) {
+        portInput.focus()
+        return
+      }
+      const invoke = window.__TAURI__?.core?.invoke
+      if (!invoke) return
+      setPortPrompt(false)
+      // The app relaunches and tears down this window, so the promise never
+      // settles normally; swallow the IPC rejection that the restart causes.
+      invoke('apply_web_port', { port: value }).catch(() => {})
+    }
+    portPrompt.querySelectorAll('[data-dismiss-port]').forEach((el) => {
+      el.addEventListener('click', () => setPortPrompt(false))
+    })
+    document.getElementById('port-apply').onclick = applyWebPort
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !portPrompt.hidden) {
+        applyWebPort()
+        return
+      }
+      if (event.key === 'Escape' && !portPrompt.hidden) setPortPrompt(false)
+    })
+    window.__DSH_WEB_PORT_PROMPT__ = {
+      show(port) { portInput.value = String(port); setPortPrompt(true) },
+      hide() { setPortPrompt(false) },
     }
 
     async function boot() {

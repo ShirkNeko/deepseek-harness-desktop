@@ -14,7 +14,7 @@
 | **构建环境** | — | 复用本机 Node 22.19+ 或 24+ 和 pnpm；没有时再从 npmmirror 下载 Node，并通过 npm 安装 pnpm |
 | **依赖** | — | 在平台应用数据目录执行 `pnpm install --prod --no-frozen-lockfile`（裁剪包与 lockfile 不完全相同；移除 `CI`，避免 pnpm 强制冻结安装） |
 | **Host** | — | `node apps/cli/lib/bin.js web --host 127.0.0.1`；启动时加载失败的插件会被禁用，然后重试 Host |
-| **Web 端口** | `desktop-settings.json` 的 `webPort`（默认 `3080`） | `dsh web` 与 GUI 共用一个监听端口；写入 `webPort` 覆盖默认 `3080`（空/缺省则用默认），可用 `get_web_port` / `set_web_port` 命令或托盘“Web 端口”子菜单（常用端口预设）读取或修改；改变后需重启生效 |
+| **Web 端口** | `desktop-settings.json` 的 `webPort`（默认 `3080`） | `dsh web` 与 GUI 共用一个监听端口；写入 `webPort` 覆盖默认 `3080`（空/缺省则用默认），可用 `get_web_port` / `set_web_port` 命令或托盘“Web 端口”子菜单（常用端口预设，另加一个在主窗口中输入的自定义端口项，确定后立即重启生效）读取或修改；预设改变后需重启生效 |
 | **UI** | 本地 `shell.html` 标题栏 | 无边框窗口嵌入 `dsh web`；启动页是紧贴内容的透明窗口，中间一块无边框、四周淡出的毛玻璃，带官方鱼形标志、DeepSeek 字标和进度条；第一次关闭是与 web 客户端一致的页内浅色对话框；Windows 控件在右，macOS 在左，Linux 读取窗口管理器按钮布局 |
 | **托盘** | 原生托盘图标 | 第一次关闭询问最小化到托盘还是退出，并写入 `desktop-settings.json`；托盘可改该偏好、显示窗口、安装 Sakana 插件库（在当前 Host 主目录执行 `dsh plugin --profile web add github:Sakana-yuyu/dsh-plugins`）、检查更新、查看错误日志（打开 `boot.log`）、重启或退出。重启和退出都会停止 Host 的 Node 进程树；重启随后重新拉起桌面进程。插件库安装成功后走同一条重启路径，以便加载该库。最小化到托盘则保持 Host 运行 |
 | **通知** | Overlay 插件 + 本机 POST | `turn/end` 且 `completed` 时，窗口不在前台则弹出系统通知并播放 `sounds/complete.wav` |
