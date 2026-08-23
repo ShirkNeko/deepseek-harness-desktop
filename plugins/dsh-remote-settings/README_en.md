@@ -80,7 +80,35 @@ if (me.role !== 'admin' && !folderAllowed(real, perms.allowed_folders)) {
 - A **backup + sha256 manifest** is kept so `rollback` never restores a file
   from a different dsh version.
 - Gateway patch automatically scans all `dsh-passwords` copies and applies permission bypass patch.
-- **Uninstall restores**: DSH plugins have no uninstall hook, so before
+
+### 3. dsh-passwords client / status patches
+
+Three more idempotent, reversible patches on `dsh-passwords`:
+
+- **Dark mode (`dist/client.js`)**: the dsh-passwords settings card CSS hardcodes
+  light-only colors for status pills, avatar/button contrast, the switch track and
+  input hover/focus. dsh's theme presenter sets `body[data-ds-dark-theme]` on dark,
+  so the plugin appends a `body[data-ds-dark-theme]` override block to the card CSS,
+  adapting those fixed light colors while leaving the token-driven colors alone.
+- **`/patch/status` discovery (`dist/patch.js`)**: dsh-passwords' `findDshRoot()`
+  only checks `npm root -g`, the cwd walk-up and `/usr/local`, so a desktop layout
+  (dsh packages hoisted under a dsh home / profile `node_modules`) returns `null`,
+  and `/api/dsh-passwords/patch/status` returns `null` → the card shows "status
+  unknown". The plugin appends a dsh home / `profiles` scan so `findDshRoot()` finds
+  the desktop dsh root and the status endpoint reports the real state.
+- **"deny all" save (`dist/gateway.js`)**: when the workspace toggles disable every
+  workspace the client sends `allowedFolders: ['__deny__']` (dsh-passwords'
+  "deny all" sentinel), but `/gateway/api/permissions` validation rejects it as a
+  non-path, so saving returns 400 and the permission draft reverts. The plugin
+  exempts the `__deny__` sentinel so "disable all workspaces" can be saved.
+
+
+> Note: `/patch/status` now reports the real state (e.g. "not applied" while
+> dsh-passwords' own sidebar-search sub-patch is missing). Showing "applied" also
+> needs that workspaceSearch sub-patch — it is a separate dsh-passwords patch,
+> outside this plugin's scope.
+
+**Uninstall restores**: DSH plugins have no uninstall hook, so before
   removing the plugin run `dsh-remote-settings rollback` (restores every
   patched copy from its backup, including both patches) and then
   `dsh plugin --profile web remove dsh-remote-settings`.

@@ -26,6 +26,15 @@ import {
   patchGateway,
   statusGateway,
   rollbackGateway,
+  patchDspwClient,
+  statusDspwClient,
+  rollbackDspwClient,
+  patchDspwPatch,
+  statusDspwPatch,
+  rollbackDspwPatch,
+  patchDspwPerms,
+  statusDspwPerms,
+  rollbackDspwPerms,
   fsPathFromBaseUrl,
 } from './patch.js'
 
@@ -87,6 +96,32 @@ export function apply(ctx, config) {
     + `${gw.missing} missing / ${gw.targets.length} found`,
   )
 
+  // Patch the dsh-passwords client card CSS so its status pills / buttons /
+  // switch track / inputs adapt to dark mode (body[data-ds-dark-theme] is set by
+  // dsh's theme presenter when the active scheme is dark). No-op without dsh-passwords.
+  const dspw = patchDspwClient(anchors)
+  ctx.logger.info(
+    `[dsh-remote-settings] dspw-client: ${dspw.applied} applied, ${dspw.unchanged} unchanged, `
+    + `${dspw.missing} missing / ${dspw.targets.length} found`,
+  )
+
+  // Patch dsh-passwords' findDshRoot so its /patch/status reports the real state
+  // (instead of "未知") in a desktop/profile dsh layout. No-op without dsh-passwords.
+  const dspwPatch = patchDspwPatch(anchors)
+  ctx.logger.info(
+    `[dsh-remote-settings] dspw-patch: ${dspwPatch.applied} applied, ${dspwPatch.unchanged} unchanged, `
+    + `${dspwPatch.missing} missing / ${dspwPatch.targets.length} found`,
+  )
+
+  // Patch dsh-passwords' /gateway/api/permissions folder validation so the
+  // "deny all" sentinel (`__deny__`) can be saved — otherwise disabling every
+  // workspace returns 400 and the permission draft reverts.
+  const dspwPerms = patchDspwPerms(anchors)
+  ctx.logger.info(
+    `[dsh-remote-settings] dspw-perms: ${dspwPerms.applied} applied, ${dspwPerms.unchanged} unchanged, `
+    + `${dspwPerms.missing} missing / ${dspwPerms.targets.length} found`,
+  )
+
   // Refresh the client-module graph rev so the served bundle URL matches the
   // patched content. Non-web profiles have no clientModules; the /plugins route
   // reads the file per request with `cache-control: no-cache`, so the browser
@@ -106,5 +141,14 @@ export function apply(ctx, config) {
     gatewayStatus: () => statusGateway(anchors),
     gatewayApply: () => patchGateway(anchors),
     gatewayRollback: () => rollbackGateway(anchors),
+    dspwClientStatus: () => statusDspwClient(anchors),
+    dspwClientApply: () => patchDspwClient(anchors),
+    dspwClientRollback: () => rollbackDspwClient(anchors),
+    dspwPatchStatus: () => statusDspwPatch(anchors),
+    dspwPatchApply: () => patchDspwPatch(anchors),
+    dspwPatchRollback: () => rollbackDspwPatch(anchors),
+    dspwPermsStatus: () => statusDspwPerms(anchors),
+    dspwPermsApply: () => patchDspwPerms(anchors),
+    dspwPermsRollback: () => rollbackDspwPerms(anchors),
   })
 }
