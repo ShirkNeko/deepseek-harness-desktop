@@ -4,6 +4,8 @@
 
 一个可复用的 DeepSeek Harness (dsh) 插件：为“通过已认证网关远程访问”的浏览器开启配置面（设置 / 插件 / 模型 / 凭据页面），但**不削弱 dsh 主机侧的 `/api` 安全栅栏**。
 
+> 远程“打开产出文件”由 dsh-passwords 网关自带的 `/gateway/api/download` 负责，并按子用户工作区白名单授权；本插件**不接管、不绕过**，只负责设置面（见下）。
+
 ## 问题背景
 
 dsh 的浏览器端把配置面做了 **loopback only**：
@@ -16,7 +18,7 @@ dsh 的浏览器端把配置面做了 **loopback only**：
 
 ## 工作原理
 
-dsh 客户端持久化门写死在编译后的 bundle 里，DSH 没有给插件留下“打开配置面”的口子。因此本插件在 dsh 启动时，对编译后的 `@deepseek-ai/dsh-client-ui-settings/lib/client.js` 做一次**按语义匹配、对版本健壮**的补丁：
+dsh-passwordsdsh 客户端持久化门写死在编译后的 bundle 里，DSH 没有给插件留下“打开配置面”的口子。因此本插件在 dsh 启动时，对编译后的 `@deepseek-ai/dsh-client-ui-settings/lib/client.js` 做一次**按语义匹配、对版本健壮**的补丁：
 
 ```js
 // 命中（任意空白/引号风格）：
