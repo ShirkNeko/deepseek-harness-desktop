@@ -52,8 +52,19 @@ connection.isLoopback ? "host" : "memory"
   is the only thing that must survive a dsh upgrade.**
 - All occurrences are replaced, covering the **two** spots dsh ships
   (`SettingsScopeController` and `SettingsDescribeMirror`).
+- **Locates and patches EVERY copy**: the plugin asks
+  `ctx.clientModules.clientPath(pkg)` — the same resolution the browser plugin
+  roster uses — and from that seeds a scan of every `node_modules` copy, every
+  `packages/*` source image, and (when dsh runs from a `harness-versions`
+  snapshot) **every sibling version tree**, patching them all in one pass. So a
+  dsh upgrade that moves it to a different snapshot keeps working and no copy is
+  missed — fully automatic, no `--dir`, no per-tree step.
 - A **backup + sha256 manifest** is kept so `rollback` never restores a file
   from a different dsh version.
+- **Uninstall restores**: DSH plugins have no uninstall hook, so before
+  removing the plugin run `dsh-remote-settings rollback` (restores every
+  patched copy from its backup) and then
+  `dsh plugin --profile web remove dsh-remote-settings`.
 
 ## Install
 

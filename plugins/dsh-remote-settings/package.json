@@ -6,7 +6,8 @@
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "bin": {
-    "dsh-remote-settings": "lib/cli.js"
+    "dsh-remote-settings": "lib/cli.js",
+    "dsh-remote-settings-install": "lib/install.js"
   },
   "exports": {
     ".": {
@@ -17,7 +18,16 @@
       "types": "./lib/patch.d.ts",
       "default": "./lib/patch.js"
     },
+    "./install": {
+      "default": "./lib/install.js"
+    },
     "./package.json": "./package.json"
+  },
+  "scripts": {
+    "install:patch": "node lib/install.js patch",
+    "install:undo": "node lib/install.js undo",
+    "install:status": "node lib/install.js status",
+    "postinstall": "node lib/install.js patch"
   },
   "dsh": {
     "bundle": {
@@ -30,6 +40,7 @@
   },
   "files": [
     "lib/",
+    "scripts/",
     "cordis.yml",
     "README.md",
     "README_en.md"
