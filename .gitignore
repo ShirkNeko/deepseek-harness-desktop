@@ -2,8 +2,7 @@ CLAUDE.local.md
 .env
 node_modules/
 lib/
-!/plugins/dsh-remote-settings/lib/
-!/plugins/dsh-remote-settings/lib/**
+!/plugins/**
 *.tsbuildinfo
 pnpm-debug.log
 .pnpm-store/
