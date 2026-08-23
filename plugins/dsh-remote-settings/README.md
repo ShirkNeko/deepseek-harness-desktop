@@ -27,6 +27,7 @@ connection.isLoopback ? "host" : "memory"
 
 - **语义正则**匹配 `connection.isLoopback ? "host" : "memory"`（容忍任意空白与单/双引号），因此 dsh 换了压缩器、改换行、改缩进都不会失配。**这是唯一需要跨 dsh 版本存活的东西。**
 - 用 `split/replace` 全量替换，覆盖 dsh 中**两处**该三元（`SettingsScopeController` 与 `SettingsDescribeMirror`）。
+- **精确定位被服务的 bundle**：插件通过 `ctx.clientModules.clientPath(pkg)` 拿到 dsh 实际对外提供的那个客户端 bundle 文件路径（与浏览器插件名录同源解析），再对该文件直接打补丁，因此无论是 `node_modules` 安装还是 `packages/*` 源码快照（如 `harness-versions`）都能命中；`clientModules` 不可用时回退到 `node_modules` / `packages` 扫描。
 - 保留**原文件备份 + sha256 哈希元数据**，`rollback` 永远不会把另一个 dsh 版本的文件恢复回来。
 
 ## 安装
@@ -43,25 +44,43 @@ pnpm install
 
 > dsh-passwords 等网关类插件也可以把 `dsh-remote-settings` 声明为自己的依赖，从而自动带上本修复，无需各自重新实现。
 
-启动 dsh 时插件会自动应用补丁（幂等）。日志会显示 `[dsh-remote-settings] applied/unchanged`。
+启动 dsh 时插件会**自动匹配并给所有可能的 bundle 拷贝打补丁**（幂等）：它用 `clientModules.clientPath` 拿到被服务的那个文件，并据此扫描 `node_modules`、`packages/*` 源码目录、以及 `harness-versions` 下的**每一个版本快照**，全部一次处理——这样 dsh 升级切换到别的快照/树也不会漏。日志会显示 `[dsh-remote-settings] all copies: N applied, M unchanged / X found`。
 
-## 使用
+> 也就是说：你只需安装 + 重启 dsh，它会**自动“全打一遍”**，不需要手动 `--dir`、不需要逐棵树操作。
 
-插件启动后自动打补丁。也可用 CLI 手动检查/应用/回滚：
+## 使用 / 卸载
+
+插件启动后自动打补丁。也可用 CLI 检查/应用/恢复（`status`/`patch` 都**作用于所有拷贝**）：
 
 ```bash
-# 查看当前配置面是否已开启
+# 查看已匹配到的所有拷贝及各自状态（自动识别，无需 --dir）
 dsh-remote-settings status
 
-# 手动应用补丁（幂等）
+# 给所有拷贝打补丁（幂等）
 dsh-remote-settings patch
 
-# 回滚到原始 bundle
+# 恢复所有拷贝到原始状态 —— 卸载前执行这一步即可还原原功能
 dsh-remote-settings rollback
-
-# 目标包/文件可通过参数覆盖；--dir 额外指定解析锚点
-dsh-remote-settings status --package @deepseek-ai/dsh-client-ui-settings --file lib/client.js --dir /path/to/dsh
 ```
+
+### 安装脚本（自动识别 + 一次全打 / 取消）
+
+带 **cmd / sh 安装与取消脚本**，`dsh plugin` 安装后运行一次即可自动识别并全打；卸载前用撤销脚本还原：
+
+```bash
+# 安装时自动识别并给所有拷贝打补丁
+scripts/install.sh        # Linux/macOS
+scripts\install.bat       # Windows
+
+# 撤销（还原所有拷贝到原始状态）
+scripts/undo.sh           # Linux/macOS
+scripts\undo.bat          # Windows
+```
+
+> 也可以直接用 `node lib/install.js patch|undo|status`（内部同样自动识别、作用于所有拷贝）。
+> 包还声明了 `postinstall`（`node lib/install.js patch`），在 `pnpm add` 运行该包生命周期脚本时（需在 profile 的 `pnpm-workspace.yaml` 把此包加入 `allowBuilds`，pnpm 10+ 默认拦截脚本）会自动打一次。
+
+> **卸载恢复**：DSH 插件没有“卸载回调”，所以卸载时先运行 `dsh-remote-settings rollback`（或 `scripts/undo.*`）（会把每个打过补丁的拷贝用备份还原成原始 bundle），再 `dsh plugin --profile web remove dsh-remote-settings`，即可完全恢复原功能。
 
 其它插件可以通过服务 `ctx.remoteSettings`（`status()` / `apply()` / `rollback()`）或直接复用 `dsh-remote-settings/patch` 子路径导出的函数来接入。
 
