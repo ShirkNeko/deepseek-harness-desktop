@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { apply as applyPlugin } from '../lib/index.js'
 import {
   DEFAULT_PACKAGE,
   DEFAULT_RELATIVE,
@@ -21,6 +23,9 @@ import {
   patchGateway,
   statusGateway,
   rollbackGateway,
+  defaultAnchors,
+  profileAnchors,
+  fsPathFromBaseUrl,
 } from '../lib/patch.js'
 
 /** Build 2 harness-versions snapshot trees, each with a ui-settings bundle. */
@@ -226,5 +231,79 @@ test('gateway patch lets owner/admin bypass the download allowlist (reversible)'
   const rolled = rollbackGateway([root])
   assert.equal(rolled.rolledBack, 1)
   assert.ok(readFileSync(target, 'utf8').includes('if (!folderAllowed(real, perms.allowed_folders)) {'))
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('profileAnchors lists existing profile dirs under a dsh base', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-profiles-'))
+  const web = path.join(root, 'profiles', 'web')
+  const headless = path.join(root, 'profiles', 'headless')
+  mkdirSync(web, { recursive: true })
+  mkdirSync(headless, { recursive: true })
+  const anchors = profileAnchors(root)
+  assert.ok(anchors.includes(web))
+  assert.ok(anchors.includes(headless))
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('defaultAnchors expands dsh profile dirs under DSH_HOME', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-defanchors-'))
+  const web = path.join(root, 'profiles', 'web')
+  mkdirSync(web, { recursive: true })
+  const prev = process.env.DSH_HOME
+  process.env.DSH_HOME = root
+  try {
+    const anchors = defaultAnchors()
+    assert.ok(anchors.includes(root))
+    assert.ok(anchors.includes(web))
+  } finally {
+    if (prev === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = prev
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('fsPathFromBaseUrl converts a file:// base URL to a filesystem path', () => {
+  const p = fsPathFromBaseUrl('file:///C:/Users/x/.dsh/profiles/web/')
+  assert.equal(typeof p, 'string')
+  assert.equal(p.includes('C:\\Users\\x\\.dsh\\profiles\\web'), true)
+  assert.equal(fsPathFromBaseUrl(undefined), undefined)
+  assert.equal(fsPathFromBaseUrl('http://127.0.0.1:9000'), 'http://127.0.0.1:9000')
+})
+
+test('cordis apply() converts baseUrl and patches the gateway at boot', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-boot-'))
+  const profile = path.join(root, 'profiles', 'web')
+  // The served client bundle.
+  const clientRoot = path.join(profile, 'node_modules', DEFAULT_PACKAGE)
+  mkdirSync(path.join(clientRoot, 'lib'), { recursive: true })
+  writeFileSync(path.join(clientRoot, DEFAULT_RELATIVE), CANONICAL)
+  // The dsh-passwords gateway in the same profile.
+  const gwDir = path.join(profile, 'node_modules', 'dsh-passwords', 'dist')
+  mkdirSync(gwDir, { recursive: true })
+  writeFileSync(path.join(gwDir, 'package.json'), JSON.stringify({ name: GATEWAY_PACKAGE }))
+  const gateway =
+    "        const perms = effectivePermissions(me.userId);\n" +
+    "        if (!folderAllowed(real, perms.allowed_folders)) {\n" +
+    "          res.status(403).json({ ok: false, code: 'FORBIDDEN', error: '目录越权' });\n" +
+    "          return;\n" +
+    "        }\n"
+  writeFileSync(path.join(gwDir, 'gateway.js'), gateway)
+
+  const ctx = {
+    baseUrl: pathToFileURL(profile).href + '/',
+    clientModules: {
+      clientPath: () => path.join(clientRoot, DEFAULT_RELATIVE),
+      rebuilt: () => {},
+    },
+    logger: { info: () => {} },
+    provide: () => {},
+  }
+  applyPlugin(ctx, {})
+
+  const gwContent = readFileSync(path.join(gwDir, 'gateway.js'), 'utf8')
+  assert.ok(gwContent.includes("me.role !== 'admin' && !folderAllowed(real, perms.allowed_folders)"))
+  const clientContent = readFileSync(path.join(clientRoot, DEFAULT_RELATIVE), 'utf8')
+  assert.equal(clientContent.includes('connection.isLoopback ? "host" : "memory"'), false)
   rmSync(root, { recursive: true, force: true })
 })

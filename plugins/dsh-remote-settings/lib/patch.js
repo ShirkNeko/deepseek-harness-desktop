@@ -31,6 +31,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 /** Default target: the settings plugin's compiled client bundle. */
 export const DEFAULT_PACKAGE = '@deepseek-ai/dsh-client-ui-settings'
@@ -406,15 +407,53 @@ function harnessVersionsRoot(paths) {
 }
 
 /**
+ * Every profile directory under a dsh home/base dir (`<base>/profiles/<name>`),
+ * for the dirs that exist. A profile's `node_modules` is where profile plugins
+ * like `dsh-passwords` are installed, so these anchors make the auto-detection
+ * find a gateway served from the active profile even when the caller gives no
+ * explicit anchor.
+ * @param {string} home - a dsh home/base directory.
+ * @returns {string[]} existing profile directories.
+ */
+export function profileAnchors(home) {
+  const profiles = path.join(home, 'profiles')
+  if (!existsSync(profiles)) return []
+  const out = []
+  for (const name of readdirSync(profiles)) {
+    const profileDir = path.join(profiles, name)
+    if (existsSync(profileDir)) out.push(profileDir)
+  }
+  return out
+}
+
+/**
+ * Normalize a dsh `ctx.baseUrl` (a `file://` URL pointing at the profile
+ * directory) into a filesystem path suitable for a resolution/scan anchor.
+ * Non-file URLs (e.g. an `http://` base for a non-web profile) are returned
+ * unchanged and simply fail to exist, so they are harmless.
+ * @param {string | undefined} value - a base URL string.
+ * @returns {string | undefined} the filesystem path, or undefined when absent.
+ */
+export function fsPathFromBaseUrl(value) {
+  if (typeof value !== 'string') return undefined
+  try {
+    return value.startsWith('file:') ? fileURLToPath(value) : value
+  } catch {
+    return value
+  }
+}
+
+/**
  * Candidate roots for auto-detection, independent of the current working
  * directory: the dsh home env, the desktop app-data tree (where the shell keeps
- * its `harness-versions` snapshots), and the user dsh config dir. This lets the
- * install script and the startup patch self-detects even when dsh was launched
- * from elsewhere.
+ * its `harness-versions` snapshots), the user dsh config dir, and each profile
+ * directory under those bases. This lets the install script and the startup
+ * patch self-detect even when dsh was launched from elsewhere, and reach
+ * `node_modules` of the active profile where `dsh-passwords` lives.
  * @returns {string[]} existing candidate roots.
  */
 export function defaultAnchors() {
-  const raw = [
+  const bases = [
     process.env.DSH_HOME,
     process.env.APPDATA !== undefined ? path.join(process.env.APPDATA, 'DeepSeek Harness') : undefined,
     process.env.LOCALAPPDATA !== undefined ? path.join(process.env.LOCALAPPDATA, 'DeepSeek Harness') : undefined,
@@ -423,8 +462,14 @@ export function defaultAnchors() {
       : undefined,
     process.env.HOME !== undefined ? path.join(process.env.HOME, '.dsh') : undefined,
     process.env.USERPROFILE !== undefined ? path.join(process.env.USERPROFILE, '.dsh') : undefined,
-  ]
-  return raw.filter((value) => value !== undefined && existsSync(value))
+  ].filter((value) => value !== undefined)
+  const anchors = new Set()
+  for (const base of bases) {
+    if (!existsSync(base)) continue
+    anchors.add(base)
+    for (const profileDir of profileAnchors(base)) anchors.add(profileDir)
+  }
+  return [...anchors]
 }
 
 /**
@@ -643,6 +688,8 @@ export default {
   rollbackRemoteSettingsPatchAll,
   collectAllTargets,
   defaultAnchors,
+  profileAnchors,
+  fsPathFromBaseUrl,
   resolveBundlePath,
   GATEWAY_PACKAGE,
   GATEWAY_FILE,

@@ -23,6 +23,10 @@ import {
   applyRemoteSettingsPatchAll,
   patchStatusAll,
   rollbackRemoteSettingsPatchAll,
+  patchGateway,
+  statusGateway,
+  rollbackGateway,
+  fsPathFromBaseUrl,
 } from './patch.js'
 
 /** Stable cordis plugin name. */
@@ -53,7 +57,11 @@ export const configure = {
 export function apply(ctx, config) {
   const pkg = config?.settingsPackage ?? configure.settingsPackage
   const relative = config?.settingsFile ?? configure.settingsFile
-  const anchors = [ctx.baseUrl, config?.dshRoot].filter(value => value !== undefined)
+  // `ctx.baseUrl` is the profile directory as a file:// URL; normalize it to a
+  // filesystem path so it can seed the bundle/gateway scans. Non-web profiles
+  // (no clientModules/baseUrl) fall back to dshRoot + auto-detection.
+  const basePath = fsPathFromBaseUrl(ctx.baseUrl)
+  const anchors = [basePath, config?.dshRoot].filter(value => value !== undefined)
 
   // Seed the scan with the exact bundle the running dsh serves so it is always
   // patched even if the generic scan misses it.
@@ -68,6 +76,15 @@ export function apply(ctx, config) {
   ctx.logger.info(
     `[dsh-remote-settings] all copies: ${result.applied} applied, ${result.unchanged} unchanged, `
     + `${result.missing} missing / ${result.targets.length} found`,
+  )
+
+  // Patch the dsh-passwords gateway so owner/admin can download files outside
+  // the folder allowlist (the "目录越权" fix). No-op when dsh-passwords is not
+  // installed (0 targets).
+  const gw = patchGateway(anchors)
+  ctx.logger.info(
+    `[dsh-remote-settings] gateway: ${gw.applied} applied, ${gw.unchanged} unchanged, `
+    + `${gw.missing} missing / ${gw.targets.length} found`,
   )
 
   // Refresh the client-module graph rev so the served bundle URL matches the
@@ -86,5 +103,8 @@ export function apply(ctx, config) {
     status: () => patchStatusAll(pkg, relative, anchors, seed),
     apply: () => applyRemoteSettingsPatchAll(pkg, relative, anchors, seed),
     rollback: () => rollbackRemoteSettingsPatchAll(pkg, relative, anchors, seed),
+    gatewayStatus: () => statusGateway(anchors),
+    gatewayApply: () => patchGateway(anchors),
+    gatewayRollback: () => rollbackGateway(anchors),
   })
 }
