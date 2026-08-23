@@ -16,6 +16,11 @@ import {
   applyRemoteSettingsPatchAll,
   patchStatusAll,
   rollbackRemoteSettingsPatchAll,
+  GATEWAY_PACKAGE,
+  GATEWAY_FILE,
+  patchGateway,
+  statusGateway,
+  rollbackGateway,
 } from '../lib/patch.js'
 
 /** Build 2 harness-versions snapshot trees, each with a ui-settings bundle. */
@@ -193,5 +198,33 @@ test('applyAll patches every copy and rollbackAll (uninstall) restores every cop
   const restored = rollbackRemoteSettingsPatchAll(DEFAULT_PACKAGE, DEFAULT_RELATIVE, [verA])
   assert.equal(restored.rolledBack, 2)
   assert.ok(patchStatusAll(DEFAULT_PACKAGE, DEFAULT_RELATIVE, [verA]).every(copy => !copy.enabled))
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('gateway patch lets owner/admin bypass the download allowlist (reversible)', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-gw-'))
+  const pkgDir = path.join(root, 'node_modules', 'dsh-passwords', 'dist')
+  mkdirSync(pkgDir, { recursive: true })
+  writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: GATEWAY_PACKAGE }))
+  const gateway =
+    "        const perms = effectivePermissions(me.userId);\n" +
+    "        if (!folderAllowed(real, perms.allowed_folders)) {\n" +
+    "          res.status(403).json({ ok: false, code: 'FORBIDDEN', error: '目录越权' });\n" +
+    "          return;\n" +
+    "        }\n"
+  writeFileSync(path.join(pkgDir, 'gateway.js'), gateway)
+
+  const target = path.join(pkgDir, 'gateway.js')
+  const before = statusGateway([root])
+  assert.equal(before[0].enabled, false)
+  const patched = patchGateway([root])
+  assert.equal(patched.applied, 1)
+  const content = readFileSync(target, 'utf8')
+  assert.ok(content.includes("me.role !== 'admin' && !folderAllowed(real, perms.allowed_folders)"))
+  assert.ok(statusGateway([root])[0].enabled)
+
+  const rolled = rollbackGateway([root])
+  assert.equal(rolled.rolledBack, 1)
+  assert.ok(readFileSync(target, 'utf8').includes('if (!folderAllowed(real, perms.allowed_folders)) {'))
   rmSync(root, { recursive: true, force: true })
 })
