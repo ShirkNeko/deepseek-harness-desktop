@@ -14,6 +14,9 @@ window.DSH_I18N = (function () {
     'shell.min': '最小化',
     'shell.max': '最大化',
     'shell.close': '关闭',
+    'shell.portTitle': '设置 Web 端口',
+    'shell.portDesc': '输入 1–65535 之间的端口号，应用后将立即重启生效。',
+    'shell.portApply': '应用并重启',
   }
   const en = {
     'splash.preparing': 'Preparing the runtime…',
@@ -26,6 +29,9 @@ window.DSH_I18N = (function () {
     'shell.min': 'Minimize',
     'shell.max': 'Maximize',
     'shell.close': 'Close',
+    'shell.portTitle': 'Set web port',
+    'shell.portDesc': 'Enter a port between 1 and 65535; applying restarts the app immediately.',
+    'shell.portApply': 'Apply & restart',
   }
 
   function detect() {

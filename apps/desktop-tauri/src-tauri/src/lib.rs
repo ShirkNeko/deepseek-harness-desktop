@@ -47,6 +47,7 @@ pub fn run() {
             chrome::restart_app,
             chrome::get_web_port,
             chrome::set_web_port,
+            chrome::apply_web_port
         ])
         .setup(|app| {
             let handle = app.handle().clone();

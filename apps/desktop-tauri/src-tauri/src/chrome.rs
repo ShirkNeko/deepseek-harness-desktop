@@ -307,14 +307,43 @@ pub fn get_web_port() -> u16 {
 /// Persist the `dsh web` / GUI port and toast that a restart is required to apply it.
 #[tauri::command]
 pub fn set_web_port(app: AppHandle, port: u16) -> Result<(), String> {
-    if port == 0 {
-        return Err("web port must be between 1 and 65535".into());
-    }
+    validate_web_port(port)?;
     let mut settings = desktop_settings::load();
     settings.preferred_port = Some(port);
     desktop_settings::save(&settings)?;
     notify::toast(&app, "DeepSeek Harness", i18n::t(Msg::WebPortRestart));
     Ok(())
+}
+
+/// Reject port `0`; `u16` already bounds the high end to 65535.
+fn validate_web_port(port: u16) -> Result<(), String> {
+    if port == 0 {
+        return Err("web port must be between 1 and 65535".into());
+    }
+    Ok(())
+}
+
+/// Show the main window and open the in-window custom-web-port dialog
+/// prefilled with the current effective port. Used by the tray "自定义端口…" item.
+pub fn prompt_web_port(app: &AppHandle) {
+    show_main(app);
+    let port = desktop_settings::effective_web_port(&desktop_settings::load());
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.eval(&format!("window.__DSH_WEB_PORT_PROMPT__?.show({port});"));
+        let _ = main.set_focus();
+    }
+}
+
+/// Persist a custom `dsh web` / GUI port from the in-window dialog and apply it by
+/// relaunching the process (the tray's custom-port confirm), so the new port takes
+/// effect immediately rather than on a later restart.
+#[tauri::command]
+pub fn apply_web_port(app: AppHandle, port: u16) -> Result<(), String> {
+    validate_web_port(port)?;
+    let mut settings = desktop_settings::load();
+    settings.web_port = Some(port);
+    desktop_settings::save(&settings)?;
+    request_restart(&app)
 }
 
 /// Persist a close action from the tray without immediately hiding or quitting.

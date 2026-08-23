@@ -88,12 +88,20 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let port_8080 = MenuItem::with_id(app, "web-port-8080", "8080", true, None::<&str>)
         .map_err(|e| e.to_string())?;
+    let port_custom = MenuItem::with_id(
+        app,
+        "web-port-custom",
+        i18n::t(Msg::TrayWebPortCustom),
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
     let web_port_menu = Submenu::with_id_and_items(
         app,
         "web-port",
         web_port_label,
         true,
-        &[&port_default, &port_17890, &port_8000, &port_8080],
+        &[&port_default, &port_17890, &port_8000, &port_8080, &port_custom],
     )
     .map_err(|e| e.to_string())?;
     let open_log = MenuItem::with_id(app, "open-log", i18n::t(Msg::TrayOpenLog), true, None::<&str>)
@@ -147,6 +155,7 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
             "web-port-17890" => chrome::remember_web_port(app, Some(17890)),
             "web-port-8000" => chrome::remember_web_port(app, Some(8000)),
             "web-port-8080" => chrome::remember_web_port(app, Some(8080)),
+            "web-port-custom" => chrome::prompt_web_port(app),
             "open-log" => chrome::open_boot_log(app),
             "install-catalog" => plugin_catalog::begin_from_tray(app),
             "update" => {
