@@ -4,7 +4,7 @@ English | [简体中文](README.md)
 
 A reusable DeepSeek Harness (dsh) plugin that enables the settings/config plane
 (settings, plugins, models, credentials pages) for remote browsers served behind
-an authenticated gateway — **without weakening dsh's host-side `/api` security
+an authenticated gateway and allows owner/admin roles to bypass download folder allowlist — **without weakening dsh's host-side `/api` security
 fence**.
 
 ## Problem
@@ -34,6 +34,10 @@ it lets an authenticated/trusted remote browser use the config plane.
 
 ## How it works
 
+This plugin applies two patches at dsh startup:
+
+### 1. Remote Settings Patch
+
 The client persistence gate is baked into the compiled bundle and dsh offers no
 plugin seam to open it. So this plugin, at dsh startup, applies a
 **version-tolerant, semantic** patch to the compiled
@@ -46,11 +50,23 @@ connection.isLoopback ? "host" : "memory"
 "host"
 ```
 
-- A **semantic regex** matches `connection.isLoopback ? "host" : "memory"`
-  tolerating arbitrary whitespace and single/double quotes, so a different
+### 2. Gateway Patch
+
+Applies a patch to `dsh-passwords` package's `dist/gateway.js` to allow owner/admin roles to bypass download folder allowlist checks:
+
+```js
+// matched:
+if (!folderAllowed(real, perms.allowed_folders)) {
+// replaced with:
+if (me.role !== 'admin' && !folderAllowed(real, perms.allowed_folders)) {
+```
+
+**Patch features:**
+
+- A **semantic regex** matches tolerating arbitrary whitespace and single/double quotes, so a different
   minifier, line wrap or indent in a dsh upgrade cannot break detection. **This
   is the only thing that must survive a dsh upgrade.**
-- All occurrences are replaced, covering the **two** spots dsh ships
+- Remote Settings patch replaces all occurrences, covering the **two** spots dsh ships
   (`SettingsScopeController` and `SettingsDescribeMirror`).
 - **Locates and patches EVERY copy**: the plugin asks
   `ctx.clientModules.clientPath(pkg)` — the same resolution the browser plugin
@@ -61,9 +77,10 @@ connection.isLoopback ? "host" : "memory"
   missed — fully automatic, no `--dir`, no per-tree step.
 - A **backup + sha256 manifest** is kept so `rollback` never restores a file
   from a different dsh version.
+- Gateway patch automatically scans all `dsh-passwords` copies and applies permission bypass patch.
 - **Uninstall restores**: DSH plugins have no uninstall hook, so before
   removing the plugin run `dsh-remote-settings rollback` (restores every
-  patched copy from its backup) and then
+  patched copy from its backup, including both patches) and then
   `dsh plugin --profile web remove dsh-remote-settings`.
 
 ## Install
@@ -88,22 +105,45 @@ dsh applies the patch (idempotently) at startup. The log shows
 
 ## Usage
 
-The plugin patches automatically on startup. You can also check/apply/roll back
+The plugin patches automatically on startup (including both Remote Settings and Gateway patches). You can also check/apply/roll back
 with the CLI:
 
 ```bash
 # Report whether the config plane is enabled for remote
+# Shows status for both remote-settings and gateway patches
 dsh-remote-settings status
 
 # Apply the patch (idempotent)
+# Applies both remote-settings and gateway patches
 dsh-remote-settings patch
 
 # Roll back to the original bundle
+# Rolls back both remote-settings and gateway patches
 dsh-remote-settings rollback
 
 # Override the target and add a resolution anchor
 dsh-remote-settings status --package @deepseek-ai/dsh-client-ui-settings --file lib/client.js --dir /path/to/dsh
 ```
+
+### Installation scripts (auto-detect + apply/rollback all)
+
+Includes **cmd / sh installation and rollback scripts**. After `dsh plugin` installation, run once to auto-detect and patch all copies (both patches); use undo scripts before uninstalling:
+
+```bash
+# Install: auto-detect and patch all copies (remote-settings + gateway)
+scripts/install.sh        # Linux/macOS
+scripts\install.bat       # Windows
+
+# Undo: restore all copies to original state (both patches)
+scripts/undo.sh           # Linux/macOS
+scripts\undo.bat          # Windows
+```
+
+> You can also use `node lib/install.js patch|undo|status` directly (internally auto-detects and operates on all copies, including both patches).
+> For specific patch operations only, use `gateway-patch|gateway-undo|gateway-status` commands.
+> The package declares `postinstall` (`node lib/install.js patch`); when `pnpm add` runs the package lifecycle script (requires adding this package to `allowBuilds` in profile's `pnpm-workspace.yaml`, pnpm 10+ blocks scripts by default) it auto-patches once.
+
+> **Uninstall restore**: DSH plugins have no uninstall hook, so before uninstalling run `dsh-remote-settings rollback` (or `scripts/undo.*`) (restores every patched copy from backup to original bundle, including both patches), then `dsh plugin --profile web remove dsh-remote-settings` to fully restore original functionality.
 
 Other plugins can consume the service `ctx.remoteSettings` (`status()` /
 `apply()` / `rollback()`), or import the functions from the exported `./patch`
@@ -111,9 +151,9 @@ subpath (`dsh-remote-settings/patch`).
 
 ## When to "reload the patch"
 
-A dsh upgrade overwrites the compiled bundle. If remote settings start failing
-again with `settings are unavailable in this browser`, restart dsh (the plugin
-re-applies at startup), or run `dsh-remote-settings patch` once and refresh the
+A dsh or dsh-passwords upgrade overwrites the compiled bundle. If remote settings start failing
+again with `settings are unavailable in this browser` or permission checks are restored, restart dsh (the plugin
+re-applies both patches at startup), or run `dsh-remote-settings patch` once and refresh the
 browser.
 
 ## Compatibility
