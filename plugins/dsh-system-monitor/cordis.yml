@@ -1,0 +1,12 @@
+# dsh-system-monitor bundle patch layer.
+#
+# 使用方式：
+#   dsh plugin --profile web add link:../plugins/dsh-system-monitor
+# 或在 profile 中把本目录声明为依赖，并把本文件合并进 cordis.patch.yml。
+#
+# 插件同时包含：
+#   - 主机半区（lib/index.js）：注册只读 /api/system-monitor 路由
+#   - 浏览器半区（lib/client.js）：注册到底部 shell.overlay
+- insert:
+    - id: dsh-system-monitor
+      name: 'dsh-system-monitor'

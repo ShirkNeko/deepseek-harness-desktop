@@ -1,0 +1,46 @@
+{
+  "name": "dsh-system-monitor",
+  "version": "0.1.0",
+  "description": "在 Web 客户端底部显示 CPU / GPU / 显存 / 内存监控信息",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib/",
+    "cordis.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "plugin",
+    "system",
+    "monitor",
+    "cpu",
+    "gpu",
+    "vram",
+    "memory"
+  ]
+}

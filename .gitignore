@@ -5,8 +5,7 @@ apps/desktop/.env.macos
 apps/desktop/*.p12
 node_modules/
 lib/
-!/plugins/dsh-remote-settings/lib/
-!/plugins/dsh-remote-settings/lib/**
+!/plugins/**
 *.tsbuildinfo
 pnpm-debug.log
 .pnpm-store/
