@@ -24,6 +24,12 @@ export interface RemoteSettingsService {
   apply(): ApplyAllResult
   /** Restore every patched copy to its original (the uninstall path). */
   rollback(): RollbackAllResult
+  /** Status of every matched dsh-passwords gateway copy. */
+  gatewayStatus(): Array<{ target: string; found: boolean; enabled: boolean; replaced: number }>
+  /** Patch every matched dsh-passwords gateway copy (idempotent). */
+  gatewayApply(): unknown
+  /** Restore every matched dsh-passwords gateway copy (the uninstall path). */
+  gatewayRollback(): unknown
 }
 
 declare module '@deepseek-ai/cordis' {

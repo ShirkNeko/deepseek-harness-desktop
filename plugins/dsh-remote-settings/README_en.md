@@ -20,10 +20,12 @@ dsh treats the browser-side config plane as **loopback-only**:
 The host-side `/api` fence still accepts **only loopback** for the privileged
 method set (`settings.*`, `credentials.*`, `agentPreset.*`,
 `host.pickDirectory/openPath`, `llm.discoverModels`). A gateway such as
-`dsh-passwords` rewrites `Host/Origin` to `127.0.0.1:3080` when forwarding, so
-gateway traffic is accepted — in practice "an authentication layer + loopback
-rewriting". This plugin only does the **client persistence gate** half of that:
-it lets an authenticated/trusted remote browser use the config plane.
+`dsh-passwords` rewrites `Host/Origin` to the loopback address dsh actually
+listens on (`127.0.0.1`; the port follows the dsh config / `webServer.port`, not
+a fixed 3080) when forwarding, so gateway traffic is accepted — in practice "an
+authentication layer + loopback rewriting". This plugin only does the **client
+persistence gate** half of that: it lets an authenticated/trusted remote browser
+use the config plane.
 
 > Security: this plugin does **not** open the config plane to arbitrary remote
 > sources. It only forces the client persistence gate to `"host"`. Any

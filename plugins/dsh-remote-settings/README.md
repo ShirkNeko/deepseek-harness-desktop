@@ -10,7 +10,7 @@ dsh 的浏览器端把配置面做了 **loopback only**：
 - 浏览器端持久化门：`connection.isLoopback ? "host" : "memory"`（写死在编译后的客户端 bundle 里）。
 - 因此任何非回环来源（公网 IP / 局域网地址）都会进入 `memory` 模式，设置镜像 `view: undefined`，页面报 `settings are unavailable in this browser`，插件 / 模型 / 凭据页一起失效。
 
-主机侧 `/api` 栅栏对**特权方法集**（`settings.*`、`credentials.*`、`agentPreset.*`、`host.pickDirectory/openPath`、`llm.discoverModels`）仍然**只接受回环**。`dsh-passwords` 这类网关在转发时把 `Host/Origin` 改写为 `127.0.0.1:3080`，所以经网关的流量能被放行——实现上是"认证层 + 回环改写"。本插件只做**客户端持久化门**这一件事：让已认证/可信网关后面的远程浏览器能使用配置面。
+主机侧 `/api` 栅栏对**特权方法集**（`settings.*`、`credentials.*`、`agentPreset.*`、`host.pickDirectory/openPath`、`llm.discoverModels`）仍然**只接受回环**。`dsh-passwords` 这类网关在转发时把 `Host/Origin` 改写为 dsh 实际监听的回环地址（`127.0.0.1`，端口随 dsh 配置/`webServer.port` 变化，**非固定 3080**），所以经网关的流量能被放行——实现上是"认证层 + 回环改写"。本插件只做**客户端持久化门**这一件事：让已认证/可信网关后面的远程浏览器能使用配置面。
 
 > 安全说明：本插件**没有**把任意远程来源都放行。它只把客户端持久化门强制为 `"host"`。任何**没经过网关**的局域网/公网调用，主机侧 `/api` 栅栏仍会对特权方法返回 403；配置数据只在"经网关（已认证）"的路径上暴露。所以 dsh 的安全方式保持不变。
 
