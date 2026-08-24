@@ -18,6 +18,9 @@ import {
   patchGateway,
   rollbackGateway,
   statusGateway,
+  patchGatewayMediaToken,
+  rollbackGatewayMediaToken,
+  statusGatewayMediaToken,
   patchDspwClient,
   rollbackDspwClient,
   statusDspwClient,
@@ -27,6 +30,15 @@ import {
   patchDspwPerms,
   rollbackDspwPerms,
   statusDspwPerms,
+  patchComfyuiMediaBase,
+  rollbackComfyuiMediaBase,
+  statusComfyuiMediaBase,
+  patchQqchatComfyuiBase,
+  rollbackQqchatComfyuiBase,
+  statusQqchatComfyuiBase,
+  patchComfyuiPromptSurface,
+  rollbackComfyuiPromptSurface,
+  statusComfyuiPromptSurface,
 } from './patch.js'
 
 const command = process.argv[2] ?? 'patch'
@@ -72,6 +84,28 @@ function reportGatewayStatus(copies) {
   console.log(`[dsh-remote-settings-gateway] ${copies.length} copy/copies found, ${enabled.length} enabled`)
   for (const copy of copies) {
     console.log(`  ${copy.enabled ? 'enabled' : 'disabled'}  ${copy.target}  (${copy.replaced} checks)`)
+  }
+}
+
+function reportGatewayMediaTokenPatch(result) {
+  console.log(`[dsh-remote-settings-gateway-media-token] patch: ${result.applied} applied, ${result.unchanged} unchanged, ${result.missing} missing / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.outcome}  ${detail.target}`)
+  }
+}
+
+function reportGatewayMediaTokenRollback(result) {
+  console.log(`[dsh-remote-settings-gateway-media-token] rollback: ${result.rolledBack} restored, ${result.noBackup} no-backup / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.result}  ${detail.target}`)
+  }
+}
+
+function reportGatewayMediaTokenStatus(copies) {
+  const enabled = copies.filter(copy => copy.enabled)
+  console.log(`[dsh-remote-settings-gateway-media-token] ${copies.length} copy/copies found, ${enabled.length} enabled`)
+  for (const copy of copies) {
+    console.log(`  ${copy.enabled ? 'enabled' : 'disabled'}  ${copy.target}  (${copy.replaced} media-token)`)
   }
 }
 
@@ -141,28 +175,104 @@ function reportDspwPermsRollback(result) {
   }
 }
 
+function reportComfyuiPatch(result) {
+  console.log(`[dsh-remote-settings-comfyui] patch: ${result.applied} applied, ${result.unchanged} unchanged, ${result.missing} missing / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.outcome}  ${detail.target}`)
+  }
+}
+
+function reportComfyuiRollback(result) {
+  console.log(`[dsh-remote-settings-comfyui] rollback: ${result.rolledBack} restored, ${result.noBackup} no-backup / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.result}  ${detail.target}`)
+  }
+}
+
+function reportComfyuiStatus(copies) {
+  const enabled = copies.filter(copy => copy.enabled)
+  console.log(`[dsh-remote-settings-comfyui] ${copies.length} copy/copies found, ${enabled.length} enabled`)
+  for (const copy of copies) {
+    console.log(`  ${copy.enabled ? 'enabled' : 'disabled'}  ${copy.target}  (${copy.replaced} media-base missing)`)
+  }
+}
+
+function reportComfyuiPromptPatch(result) {
+  console.log(`[dsh-remote-settings-comfyui-prompt] patch: ${result.applied} applied, ${result.unchanged} unchanged, ${result.missing} missing / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.outcome}  ${detail.target}`)
+  }
+}
+function reportComfyuiPromptRollback(result) {
+  console.log(`[dsh-remote-settings-comfyui-prompt] rollback: ${result.rolledBack} restored, ${result.noBackup} no-backup / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.result}  ${detail.target}`)
+  }
+}
+function reportComfyuiPromptStatus(copies) {
+  const enabled = copies.filter(copy => copy.enabled)
+  console.log(`[dsh-remote-settings-comfyui-prompt] ${copies.length} copy/copies found, ${enabled.length} enabled`)
+  for (const copy of copies) {
+    console.log(`  ${copy.enabled ? 'enabled' : 'disabled'}  ${copy.target}  (${copy.replaced} prompt missing)`)
+  }
+}
+
+function reportQqchatPatch(result) {
+  console.log(`[dsh-remote-settings-qqchat] patch: ${result.applied} applied, ${result.unchanged} unchanged, ${result.missing} missing / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.outcome}  ${detail.target}`)
+  }
+}
+
+function reportQqchatRollback(result) {
+  console.log(`[dsh-remote-settings-qqchat] rollback: ${result.rolledBack} restored, ${result.noBackup} no-backup / ${result.targets.length} found`)
+  for (const detail of result.details) {
+    console.log(`  ${detail.result}  ${detail.target}`)
+  }
+}
+
+function reportQqchatStatus(copies) {
+  const enabled = copies.filter(copy => copy.enabled)
+  console.log(`[dsh-remote-settings-qqchat] ${copies.length} copy/copies found, ${enabled.length} enabled`)
+  for (const copy of copies) {
+    console.log(`  ${copy.enabled ? 'enabled' : 'disabled'}  ${copy.target}  (${copy.replaced} comfyui-base missing)`)
+  }
+}
+
 switch (command) {
   case 'patch':
     reportPatch(applyRemoteSettingsPatchAll())
     reportGatewayPatch(patchGateway())
+    reportGatewayMediaTokenPatch(patchGatewayMediaToken())
     reportDspwClientPatch(patchDspwClient())
     reportDspwPatchApply(patchDspwPatch())
     reportDspwPermsApply(patchDspwPerms())
+    reportComfyuiPatch(patchComfyuiMediaBase())
+    reportQqchatPatch(patchQqchatComfyuiBase())
+    reportComfyuiPromptPatch(patchComfyuiPromptSurface())
     break
   case 'undo':
   case 'rollback':
     reportRollback(rollbackRemoteSettingsPatchAll())
     reportGatewayRollback(rollbackGateway())
+    reportGatewayMediaTokenRollback(rollbackGatewayMediaToken())
     reportDspwClientRollback(rollbackDspwClient())
     reportDspwPatchRollback(rollbackDspwPatch())
     reportDspwPermsRollback(rollbackDspwPerms())
+    reportComfyuiRollback(rollbackComfyuiMediaBase())
+    reportQqchatRollback(rollbackQqchatComfyuiBase())
+    reportComfyuiPromptRollback(rollbackComfyuiPromptSurface())
     break
   case 'status':
     reportStatus(patchStatusAll())
     reportGatewayStatus(statusGateway())
+    reportGatewayMediaTokenStatus(statusGatewayMediaToken())
     reportDspwClientStatus(statusDspwClient())
     reportDspwPatchStatus(statusDspwPatch())
     reportDspwPermsStatus(statusDspwPerms())
+    reportComfyuiStatus(statusComfyuiMediaBase())
+    reportQqchatStatus(statusQqchatComfyuiBase())
+    reportComfyuiPromptStatus(statusComfyuiPromptSurface())
     break
   case 'gateway-patch':
     reportGatewayPatch(patchGateway())
@@ -173,6 +283,16 @@ switch (command) {
     break
   case 'gateway-status':
     reportGatewayStatus(statusGateway())
+    break
+  case 'gateway-media-token-patch':
+    reportGatewayMediaTokenPatch(patchGatewayMediaToken())
+    break
+  case 'gateway-media-token-undo':
+  case 'gateway-media-token-rollback':
+    reportGatewayMediaTokenRollback(rollbackGatewayMediaToken())
+    break
+  case 'gateway-media-token-status':
+    reportGatewayMediaTokenStatus(statusGatewayMediaToken())
     break
   case 'dspw-client-patch':
     reportDspwClientPatch(patchDspwClient())
@@ -204,7 +324,37 @@ switch (command) {
   case 'dspw-perms-status':
     reportDspwPermsStatus(statusDspwPerms())
     break
+  case 'comfyui-patch':
+    reportComfyuiPatch(patchComfyuiMediaBase())
+    break
+  case 'comfyui-undo':
+  case 'comfyui-rollback':
+    reportComfyuiRollback(rollbackComfyuiMediaBase())
+    break
+  case 'comfyui-status':
+    reportComfyuiStatus(statusComfyuiMediaBase())
+    break
+  case 'qqchat-patch':
+    reportQqchatPatch(patchQqchatComfyuiBase())
+    break
+  case 'qqchat-undo':
+  case 'qqchat-rollback':
+    reportQqchatRollback(rollbackQqchatComfyuiBase())
+    break
+  case 'qqchat-status':
+    reportQqchatStatus(statusQqchatComfyuiBase())
+    break
+  case 'comfyui-prompt-patch':
+    reportComfyuiPromptPatch(patchComfyuiPromptSurface())
+    break
+  case 'comfyui-prompt-undo':
+  case 'comfyui-prompt-rollback':
+    reportComfyuiPromptRollback(rollbackComfyuiPromptSurface())
+    break
+  case 'comfyui-prompt-status':
+    reportComfyuiPromptStatus(statusComfyuiPromptSurface())
+    break
   default:
-    console.log('Usage: node lib/install.js <patch|undo|status|gateway-patch|gateway-undo|gateway-status|dspw-client-patch|dspw-client-undo|dspw-client-status|dspw-patch-patch|dspw-patch-undo|dspw-patch-status|dspw-perms-patch|dspw-perms-undo|dspw-perms-status>')
+    console.log('Usage: node lib/install.js <patch|undo|status|gateway-patch|gateway-undo|gateway-status|gateway-media-token-patch|gateway-media-token-undo|gateway-media-token-status|dspw-client-patch|dspw-client-undo|dspw-client-status|dspw-patch-patch|dspw-patch-undo|dspw-patch-status|dspw-perms-patch|dspw-perms-undo|dspw-perms-status|comfyui-patch|comfyui-undo|comfyui-status|comfyui-prompt-patch|comfyui-prompt-undo|comfyui-prompt-status|qqchat-patch|qqchat-undo|qqchat-status>')
     process.exitCode = 1
 }

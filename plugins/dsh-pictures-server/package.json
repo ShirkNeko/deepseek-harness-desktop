@@ -1,0 +1,33 @@
+{
+  "name": "dsh-pictures-server",
+  "version": "0.1.0",
+  "description": "Serve the Pictures workspace at /pictures/* on the DSH Web origin so generated images are reachable through the public (reverse-proxied) page.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.yml"
+    }
+  },
+  "files": [
+    "lib/",
+    "cordis.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "plugin",
+    "pictures",
+    "static",
+    "comfyui"
+  ]
+}

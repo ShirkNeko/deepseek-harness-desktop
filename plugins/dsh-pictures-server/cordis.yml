@@ -1,0 +1,10 @@
+# dsh-pictures-server bundle patch layer.
+#
+# 使用方式：
+#   dsh plugin --profile web add link:D:/agent/deepseek-harness-desktop/plugins/dsh-pictures-server
+#
+# 挂载一个主机半区插件：把 D:\agent\Pictures 挂到 /pictures/* 上，让公网反向代理
+# （dsh-passwords serve-gateway -> 127.0.0.1:3080）也能访问生成的图片。
+- insert:
+    - id: dsh-pictures-server
+      name: 'dsh-pictures-server'

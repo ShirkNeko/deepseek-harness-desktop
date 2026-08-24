@@ -26,6 +26,9 @@ import {
   patchGateway,
   statusGateway,
   rollbackGateway,
+  patchGatewayMediaToken,
+  statusGatewayMediaToken,
+  rollbackGatewayMediaToken,
   patchDspwClient,
   statusDspwClient,
   rollbackDspwClient,
@@ -35,6 +38,15 @@ import {
   patchDspwPerms,
   statusDspwPerms,
   rollbackDspwPerms,
+  patchComfyuiMediaBase,
+  statusComfyuiMediaBase,
+  rollbackComfyuiMediaBase,
+  patchQqchatComfyuiBase,
+  statusQqchatComfyuiBase,
+  rollbackQqchatComfyuiBase,
+  patchComfyuiPromptSurface,
+  statusComfyuiPromptSurface,
+  rollbackComfyuiPromptSurface,
   fsPathFromBaseUrl,
 } from './patch.js'
 
@@ -96,6 +108,16 @@ export function apply(ctx, config) {
     + `${gw.missing} missing / ${gw.targets.length} found`,
   )
 
+  // Patch the dsh-passwords gateway so an HTTP fetch carrying a short-lived
+  // signed ?token= gets past the login page (used by qqchat_send_image for
+  // ComfyUI media on the public origin). No-op when dsh-passwords is absent.
+  // The bypass only activates when DSH_GATEWAY_MEDIA_TOKEN_SECRET is set.
+  const gwMt = patchGatewayMediaToken(anchors)
+  ctx.logger.info(
+    `[dsh-remote-settings] gateway-media-token: ${gwMt.applied} applied, ${gwMt.unchanged} unchanged, `
+    + `${gwMt.missing} missing / ${gwMt.targets.length} found`,
+  )
+
   // Patch the dsh-passwords client card CSS so its status pills / buttons /
   // switch track / inputs adapt to dark mode (body[data-ds-dark-theme] is set by
   // dsh's theme presenter when the active scheme is dark). No-op without dsh-passwords.
@@ -122,6 +144,34 @@ export function apply(ctx, config) {
     + `${dspwPerms.missing} missing / ${dspwPerms.targets.length} found`,
   )
 
+  // Patch dsh-comfyui so generated media URLs prefer the browser-accessed origin
+  // and probe the reachable address segments (LAN, then loopback) instead of
+  // short-circuiting to 127.0.0.1. No-op when dsh-comfyui is not installed.
+  const comfyui = patchComfyuiMediaBase(anchors)
+  ctx.logger.info(
+    `[dsh-remote-settings] comfyui-media-base: ${comfyui.applied} applied, ${comfyui.unchanged} unchanged, `
+    + `${comfyui.missing} missing / ${comfyui.targets.length} found`,
+  )
+
+  // Patch dsh-qqchat so qqchat_send_image appends a short-lived signed ?token=
+  // to ComfyUI media URLs on the public origin, letting the fetch past the
+  // dsh-passwords login page (the gateway is patched to accept that token).
+  // No-op when dsh-qqchat is not installed.
+  const qqchat = patchQqchatComfyuiBase(anchors)
+  ctx.logger.info(
+    `[dsh-remote-settings] qqchat-comfyui-base: ${qqchat.applied} applied, ${qqchat.unchanged} unchanged, `
+    + `${qqchat.missing} missing / ${qqchat.targets.length} found`,
+  )
+
+  // Patch dsh-comfyui so comfyui_run / comfyui_workflow results carry the
+  // LLM-generated prompt (captured via the WebSocket `executed` event plus the
+  // history graph). No-op when dsh-comfyui is not installed.
+  const comfyuiPrompt = patchComfyuiPromptSurface(anchors)
+  ctx.logger.info(
+    `[dsh-remote-settings] comfyui-prompt-surface: ${comfyuiPrompt.applied} applied, ${comfyuiPrompt.unchanged} unchanged, `
+    + `${comfyuiPrompt.missing} missing / ${comfyuiPrompt.targets.length} found`,
+  )
+
   // Refresh the client-module graph rev so the served bundle URL matches the
   // patched content. Non-web profiles have no clientModules; the /plugins route
   // reads the file per request with `cache-control: no-cache`, so the browser
@@ -141,6 +191,9 @@ export function apply(ctx, config) {
     gatewayStatus: () => statusGateway(anchors),
     gatewayApply: () => patchGateway(anchors),
     gatewayRollback: () => rollbackGateway(anchors),
+    gatewayMediaTokenStatus: () => statusGatewayMediaToken(anchors),
+    gatewayMediaTokenApply: () => patchGatewayMediaToken(anchors),
+    gatewayMediaTokenRollback: () => rollbackGatewayMediaToken(anchors),
     dspwClientStatus: () => statusDspwClient(anchors),
     dspwClientApply: () => patchDspwClient(anchors),
     dspwClientRollback: () => rollbackDspwClient(anchors),
@@ -150,5 +203,14 @@ export function apply(ctx, config) {
     dspwPermsStatus: () => statusDspwPerms(anchors),
     dspwPermsApply: () => patchDspwPerms(anchors),
     dspwPermsRollback: () => rollbackDspwPerms(anchors),
+    comfyuiStatus: () => statusComfyuiMediaBase(anchors),
+    comfyuiApply: () => patchComfyuiMediaBase(anchors),
+    comfyuiRollback: () => rollbackComfyuiMediaBase(anchors),
+    qqchatStatus: () => statusQqchatComfyuiBase(anchors),
+    qqchatApply: () => patchQqchatComfyuiBase(anchors),
+    qqchatRollback: () => rollbackQqchatComfyuiBase(anchors),
+    comfyuiPromptStatus: () => statusComfyuiPromptSurface(anchors),
+    comfyuiPromptApply: () => patchComfyuiPromptSurface(anchors),
+    comfyuiPromptRollback: () => rollbackComfyuiPromptSurface(anchors),
   })
 }

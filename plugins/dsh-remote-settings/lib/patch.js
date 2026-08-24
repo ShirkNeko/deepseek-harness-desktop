@@ -673,6 +673,72 @@ export function rollbackGateway(anchors) {
   return { rolledBack, noBackup, targets: [...targets], details }
 }
 
+// ── dsh-passwords gateway: short-lived ?token= media bypass ────────────────
+// qqchat_send_image fetches ComfyUI media from the public origin, which sits
+// behind the dsh-passwords login page; without a session cookie the fetch gets
+// 302 -> /gateway/login and uploads the login HTML instead of the image. This
+// injects a verifyMediaToken() helper plus a pre-session check that lets a GET
+// carrying a short-lived signed ?token= through (bound to the exact path). The
+// token is HMAC-SHA256 over base64url(path) + expiry, keyed by
+// DSH_GATEWAY_MEDIA_TOKEN_SECRET. With the secret unset the bypass is disabled
+// (verifyMediaToken returns false), so an unconfigured install stays locked.
+export const DSPW_MEDIA_TOKEN_MARKER = 'dshpw-remote-settings: media-token bypass'
+const DSPW_MEDIA_TOKEN_HELPER_ANCHOR =
+  '    /** 子用户权限：缺行时默认关闭全部工作区；已有显式空白名单行仍表示不限目录。 */'
+const DSPW_MEDIA_TOKEN_MW_ANCHOR = '            const user = sessionOf(req);'
+const DSPW_MEDIA_TOKEN_HELPER = `    // ${DSPW_MEDIA_TOKEN_MARKER}
+    function verifyMediaToken(req) {
+        if (req.method !== 'GET' && req.method !== 'HEAD')
+            return false;
+        const secret = process.env.DSH_GATEWAY_MEDIA_TOKEN_SECRET || '';
+        if (secret === '')
+            return false;
+        const token = typeof req.query.token === 'string' ? req.query.token : '';
+        if (token === '')
+            return false;
+        const parts = token.split('.');
+        if (parts.length !== 3)
+            return false;
+        const [b64, expStr, sig] = parts;
+        const exp = Number(expStr);
+        if (!Number.isFinite(exp) || exp < Date.now())
+            return false;
+        const payload = b64 + '.' + expStr;
+        const expected = createHmac('sha256', secret).update(payload).digest('hex');
+        if (sig.length !== expected.length)
+            return false;
+        let a; let b;
+        try { a = Buffer.from(sig); b = Buffer.from(expected); } catch { return false; }
+        if (!timingSafeEqual(a, b))
+            return false;
+        let prefix;
+        try { prefix = Buffer.from(b64, 'base64url').toString('utf8'); } catch { return false; }
+        if (prefix === '')
+            return false;
+        let pathname;
+        try { pathname = new URL(req.originalUrl, 'http://' + (req.headers.host ?? 'localhost')).pathname; } catch { return false; }
+        return pathname === prefix;
+    }
+`
+const DSPW_MEDIA_TOKEN_BYPASS = '            if (verifyMediaToken(req))\n                return next();\n'
+const isDspwMediaTokenPatched = (c) => c.includes('function verifyMediaToken(req)')
+function transformDspwMediaToken(c) {
+  if (isDspwMediaTokenPatched(c)) return { content: c, count: 0 }
+  if (!c.includes(DSPW_MEDIA_TOKEN_HELPER_ANCHOR) || !c.includes(DSPW_MEDIA_TOKEN_MW_ANCHOR)) return { content: c, count: 0 }
+  let patched = c.replace(DSPW_MEDIA_TOKEN_HELPER_ANCHOR, DSPW_MEDIA_TOKEN_HELPER + DSPW_MEDIA_TOKEN_HELPER_ANCHOR)
+  patched = patched.replace(DSPW_MEDIA_TOKEN_MW_ANCHOR, DSPW_MEDIA_TOKEN_BYPASS + DSPW_MEDIA_TOKEN_MW_ANCHOR)
+  return { content: patched, count: 2 }
+}
+const dspwMediaToken = filePatchRunner({
+  pkg: GATEWAY_PACKAGE,
+  relative: GATEWAY_FILE,
+  transform: transformDspwMediaToken,
+  isPatched: isDspwMediaTokenPatched,
+})
+export const patchGatewayMediaToken = (anchors, seedPaths = []) => dspwMediaToken.apply(anchors, seedPaths)
+export const statusGatewayMediaToken = (anchors, seedPaths = []) => dspwMediaToken.status(anchors, seedPaths)
+export const rollbackGatewayMediaToken = (anchors, seedPaths = []) => dspwMediaToken.rollback(anchors, seedPaths)
+
 // ── dsh-passwords client card patches ──────────────────────────────────────
 // The dsh-passwords settings card ships a CSS block (compiled into dist/client.js)
 // whose status pills, avatar/button contrast, switch track and input hover/focus
@@ -922,6 +988,400 @@ export function rollbackDspwPerms(anchors) {
   return { rolledBack, noBackup, targets: [...targets], details }
 }
 
+// ── Generic marker-driven file patch runner ─────────────────────────────────
+// Shared plumbing for the comfyui / qqchat patches below: resolve every copy of
+// a target file, apply its transform with an original backup + sha256 manifest,
+// report status, and roll back to the saved original. Mirrors the per-patch
+// helpers above but parameterised so the new patches stay small.
+function filePatchRunner({ pkg, relative, transform, isPatched }) {
+  const apply = (anchors, seedPaths = []) => {
+    const targets = collectAllTargets(pkg, relative, anchors, seedPaths)
+    let applied = 0
+    let unchanged = 0
+    let missing = 0
+    const details = []
+    for (const target of targets) {
+      if (!target || !existsSync(target)) {
+        details.push({ target, outcome: 'missing', replaced: 0 })
+        missing += 1
+        continue
+      }
+      let original
+      try {
+        original = readFileSync(target, 'utf8')
+      } catch {
+        details.push({ target, outcome: 'missing', replaced: 0 })
+        missing += 1
+        continue
+      }
+      if (isPatched(original)) {
+        details.push({ target, outcome: 'unchanged', replaced: 0 })
+        unchanged += 1
+        continue
+      }
+      const { content: patched, count } = transform(original)
+      if (count === 0 || patched === original) {
+        details.push({ target, outcome: 'unchanged', replaced: 0 })
+        unchanged += 1
+        continue
+      }
+      ensureOriginalBackup(target, original, patched)
+      writeFileSync(target, patched, 'utf8')
+      details.push({ target, outcome: 'applied', replaced: count })
+      applied += 1
+    }
+    return { targets: [...targets], applied, unchanged, missing, details }
+  }
+  const status = (anchors, seedPaths = []) => collectAllTargets(pkg, relative, anchors, seedPaths).map((target) => {
+    if (!target || !existsSync(target)) return { target, found: false, enabled: false, replaced: 0 }
+    let content
+    try {
+      content = readFileSync(target, 'utf8')
+    } catch {
+      return { target, found: false, enabled: false, replaced: 0 }
+    }
+    const enabled = isPatched(content)
+    return { target, found: true, enabled, replaced: enabled ? 0 : 1 }
+  })
+  const rollback = (anchors, seedPaths = []) => {
+    const targets = collectAllTargets(pkg, relative, anchors, seedPaths)
+    let rolledBack = 0
+    let noBackup = 0
+    const details = []
+    for (const target of targets) {
+      const result = rollbackPatchAt(target)
+      details.push({ target, result })
+      if (result === 'rolled-back') rolledBack += 1
+      else if (result === 'no-backup') noBackup += 1
+    }
+    return { rolledBack, noBackup, targets: [...targets], details }
+  }
+  return { apply, status, rollback }
+}
+
+// ── dsh-comfyui: media base three-address auto-detection ─────────────────────
+// The original proxyBase() chose explicit mediaHost > hostHint.origin() > LAN >
+// loopback, but hostHint.origin() returned external ?? loopback — so a
+// loopback request (server-side tool calls) preempted the LAN/public address,
+// and the selection never verified reachability. This patch:
+//   - rewrites host-hint.js so it captures the browser-accessed origin
+//     (x-forwarded-* / Host / Referer) separately from loopback, exposes
+//     externalOrigin()/probeCandidates()/resolveMediaBase(), and probes the
+//     reachable address segments (LAN IPv4, then loopback) with caching;
+//   - rewires index.js proxyBase() to be async and call resolveMediaBase(), and
+//     awaits it in the sweep path;
+//   - awaits proxyBase in tools.js / routes.js.
+export const COMFYUI_PACKAGE = 'dsh-comfyui'
+export const COMFYUI_INDEX_FILE = path.join('lib', 'index.js')
+export const COMFYUI_HOSTHINT_FILE = path.join('lib', 'host-hint.js')
+export const COMFYUI_TOOLS_FILE = path.join('lib', 'tools.js')
+export const COMFYUI_ROUTES_FILE = path.join('lib', 'routes.js')
+export const COMFYUI_CLIENT_FILE = path.join('client', 'client.js')
+
+const PATCH_DATA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'patches')
+function readPatchData(...parts) {
+  return readFileSync(path.join(PATCH_DATA_DIR, ...parts), 'utf8')
+}
+
+// host-hint.js: whole-file rewrite (anchored on the original createHostHint tail).
+const COMFYUI_HOSTHINT_ORIG_MARKER = 'return external ?? loopback;'
+const COMFYUI_HOSTHINT_PATCH_MARKER = 'resolveMediaBase(port)'
+const isComfyuiHostHintPatched = (c) => c.includes(COMFYUI_HOSTHINT_PATCH_MARKER)
+function transformComfyuiHostHint(c) {
+  if (isComfyuiHostHintPatched(c)) return { content: c, count: 0 }
+  if (!c.includes(COMFYUI_HOSTHINT_ORIG_MARKER)) return { content: c, count: 0 }
+  return { content: readPatchData('comfyui', 'host-hint.js'), count: 1 }
+}
+
+// index.js: async proxyBase + hostHint.resolveMediaBase + import + sweep await.
+const CIX_IMPORT_ORIG = "import { createHostHint, detectLanOrigin } from './host-hint.js';"
+const CIX_IMPORT_NEW = "import { createHostHint } from './host-hint.js';"
+const CIX_ASYNC_ORIG = 'proxyBase: () => {'
+const CIX_ASYNC_NEW = 'proxyBase: async () => {'
+const CIX_SELECT_ORIG =
+  '            const hinted = hostHint.origin();\n' +
+  '            if (hinted !== undefined)\n' +
+  '                return hinted;\n' +
+  '            const ws = ctx.get(\'webServer\');\n' +
+  '            if (ws === undefined || ws.port === undefined)\n' +
+  '                return undefined;\n' +
+  '            const lan = detectLanOrigin(ws.port);\n' +
+  '            if (lan !== undefined)\n' +
+  '                return lan;\n' +
+  '            const host = ws.host === \'0.0.0.0\' ? \'127.0.0.1\' : ws.host ?? \'127.0.0.1\';\n' +
+  '            return `http://${host}:${ws.port}`;'
+const CIX_SELECT_NEW =
+  '            const ws = ctx.get(\'webServer\');\n' +
+  '            if (ws === undefined || ws.port === undefined)\n' +
+  '                return undefined;\n' +
+  '            return hostHint.resolveMediaBase(ws.port);'
+const CIX_SWEEP_ORIG = 'proxyBase: runtime.proxyBase()'
+const CIX_SWEEP_NEW = 'proxyBase: await runtime.proxyBase()'
+const CIX_PATCH_MARKER = 'resolveMediaBase(ws.port)'
+const isComfyuiIndexPatched = (c) => c.includes(CIX_PATCH_MARKER)
+function transformComfyuiIndex(c) {
+  if (isComfyuiIndexPatched(c)) return { content: c, count: 0 }
+  if (!c.includes(CIX_IMPORT_ORIG) || !c.includes(CIX_SELECT_ORIG)) return { content: c, count: 0 }
+  let patched = c.replace(CIX_IMPORT_ORIG, CIX_IMPORT_NEW)
+  patched = patched.replace(CIX_ASYNC_ORIG, CIX_ASYNC_NEW)
+  patched = patched.replace(CIX_SELECT_ORIG, CIX_SELECT_NEW)
+  patched = patched.replace(CIX_SWEEP_ORIG, CIX_SWEEP_NEW)
+  return { content: patched, count: 4 }
+}
+
+// tools.js / routes.js: await the now-async proxyBase().
+const CFX_AWAIT_NEW = 'proxyBase: await runtime.proxyBase()'
+const isComfyuiAwaitPatched = (c) => c.includes(CFX_AWAIT_NEW)
+function transformComfyuiAwait(c) {
+  if (isComfyuiAwaitPatched(c)) return { content: c, count: 0 }
+  const count = (c.match(/proxyBase: runtime\.proxyBase\(\)/g) ?? []).length
+  if (count === 0) return { content: c, count: 0 }
+  return { content: c.replace(/proxyBase: runtime\.proxyBase\(\)/g, CFX_AWAIT_NEW), count }
+}
+
+const comfyuiHostHint = filePatchRunner({
+  pkg: COMFYUI_PACKAGE, relative: COMFYUI_HOSTHINT_FILE,
+  transform: transformComfyuiHostHint, isPatched: isComfyuiHostHintPatched,
+})
+const comfyuiIndex = filePatchRunner({
+  pkg: COMFYUI_PACKAGE, relative: COMFYUI_INDEX_FILE,
+  transform: transformComfyuiIndex, isPatched: isComfyuiIndexPatched,
+})
+const comfyuiTools = filePatchRunner({
+  pkg: COMFYUI_PACKAGE, relative: COMFYUI_TOOLS_FILE,
+  transform: transformComfyuiAwait, isPatched: isComfyuiAwaitPatched,
+})
+const comfyuiRoutes = filePatchRunner({
+  pkg: COMFYUI_PACKAGE, relative: COMFYUI_ROUTES_FILE,
+  transform: transformComfyuiAwait, isPatched: isComfyuiAwaitPatched,
+})
+
+// client.js: media URLs that point at loopback are rewritten to the origin the
+// browser is actually on, so the generated media loads no matter which address
+// the user opened the page with (loopback / LAN / public). Adds a mediaSrc()
+// helper and uses it for the card <img>/<video>/<audio>, the download link and
+// the lightbox.
+const CFX_CLIENT_LIGHTBOX_ORIG = 'const src = images[index];'
+const CFX_CLIENT_LIGHTBOX_NEW = 'const src = mediaSrc(images[index]);'
+const CFX_CLIENT_SRC_ORIG = 'src: item.url,'
+const CFX_CLIENT_SRC_NEW = 'src: mediaSrc(item.url),'
+const CFX_CLIENT_HREF_ORIG = 'href: item.url,'
+const CFX_CLIENT_HREF_NEW = 'href: mediaSrc(item.url),'
+const CFX_CLIENT_MEDIAITEM_START = '\t\tfunction MediaItem({ item, t, onOpen }) {'
+const CFX_CLIENT_MEDIASRC_FN =
+  '\t\t/** Resolve a media URL to the origin the browser is actually on when the\n' +
+  '\t\t * baked URL points at loopback (127.0.0.1/localhost), so images load no\n' +
+  '\t\t * matter which address the user opened the page with (loopback / LAN / public). */\n' +
+  '\t\tfunction mediaSrc(url) {\n' +
+  '\t\t\tif (typeof url !== "string" || url === "") return url;\n' +
+  '\t\t\tlet u;\n' +
+  '\t\t\ttry { u = new URL(url, window.location.href); } catch { return url; }\n' +
+  '\t\t\tconst host = window.location.host;\n' +
+  '\t\t\tconst loop = u.hostname === "127.0.0.1" || u.hostname === "localhost" || u.hostname === "::1" || u.hostname === "0.0.0.0";\n' +
+  '\t\t\tif (host && loop) { u.protocol = window.location.protocol; u.host = host; return u.href; }\n' +
+  '\t\t\treturn url;\n' +
+  '\t\t}'
+const CFX_CLIENT_MARKER = 'function mediaSrc(url)'
+const isComfyuiClientPatched = (c) => c.includes(CFX_CLIENT_MARKER)
+function transformComfyuiClient(c) {
+  if (isComfyuiClientPatched(c)) return { content: c, count: 0 }
+  if (!c.includes(CFX_CLIENT_LIGHTBOX_ORIG) || !c.includes(CFX_CLIENT_SRC_ORIG)
+    || !c.includes(CFX_CLIENT_HREF_ORIG) || !c.includes(CFX_CLIENT_MEDIAITEM_START)) {
+    return { content: c, count: 0 }
+  }
+  let patched = c.replace(CFX_CLIENT_LIGHTBOX_ORIG, CFX_CLIENT_LIGHTBOX_NEW)
+  patched = patched.replaceAll(CFX_CLIENT_SRC_ORIG, CFX_CLIENT_SRC_NEW)
+  patched = patched.replace(CFX_CLIENT_HREF_ORIG, CFX_CLIENT_HREF_NEW)
+  patched = patched.replace(CFX_CLIENT_MEDIAITEM_START, `${CFX_CLIENT_MEDIASRC_FN}\n${CFX_CLIENT_MEDIAITEM_START}`)
+  return { content: patched, count: 6 }
+}
+const comfyuiClient = filePatchRunner({
+  pkg: COMFYUI_PACKAGE, relative: COMFYUI_CLIENT_FILE,
+  transform: transformComfyuiClient, isPatched: isComfyuiClientPatched,
+})
+
+export const patchComfyuiMediaBase = (anchors, seedPaths = []) => {
+  const runs = [
+    comfyuiIndex.apply(anchors, seedPaths),
+    comfyuiHostHint.apply(anchors, seedPaths),
+    comfyuiTools.apply(anchors, seedPaths),
+    comfyuiRoutes.apply(anchors, seedPaths),
+    comfyuiClient.apply(anchors, seedPaths),
+  ]
+  const applied = runs.reduce((sum, r) => sum + r.applied, 0)
+  const unchanged = runs.reduce((sum, r) => sum + r.unchanged, 0)
+  const missing = runs.reduce((sum, r) => sum + r.missing, 0)
+  return {
+    applied, unchanged, missing,
+    targets: [...new Set(runs.flatMap((r) => r.targets))],
+    details: runs.flatMap((r) => r.details),
+  }
+}
+export const statusComfyuiMediaBase = (anchors, seedPaths = []) => [
+  ...comfyuiIndex.status(anchors, seedPaths),
+  ...comfyuiHostHint.status(anchors, seedPaths),
+  ...comfyuiTools.status(anchors, seedPaths),
+  ...comfyuiRoutes.status(anchors, seedPaths),
+  ...comfyuiClient.status(anchors, seedPaths),
+]
+export const rollbackComfyuiMediaBase = (anchors, seedPaths = []) => {
+  const results = [
+    comfyuiIndex.rollback(anchors, seedPaths),
+    comfyuiHostHint.rollback(anchors, seedPaths),
+    comfyuiTools.rollback(anchors, seedPaths),
+    comfyuiRoutes.rollback(anchors, seedPaths),
+    comfyuiClient.rollback(anchors, seedPaths),
+  ]
+  return {
+    rolledBack: results.reduce((sum, r) => sum + r.rolledBack, 0),
+    noBackup: results.reduce((sum, r) => sum + r.noBackup, 0),
+    targets: [...new Set(results.flatMap((r) => r.targets))],
+    details: results.flatMap((r) => r.details),
+  }
+}
+export const patchComfyuiClient = (anchors, seedPaths = []) => comfyuiClient.apply(anchors, seedPaths)
+export const statusComfyuiClient = (anchors, seedPaths = []) => comfyuiClient.status(anchors, seedPaths)
+export const rollbackComfyuiClient = (anchors, seedPaths = []) => comfyuiClient.rollback(anchors, seedPaths)
+
+// ── dsh-comfyui: surface the LLM-generated prompt in results ────────────────
+// TextGenerate (Qwen) builds the prompt at runtime and ComfyUI never persists
+// that text in /history, so the tool results carried no prompt. This patch
+// captures the text from the WebSocket `executed` event (progress.js) and, with
+// the history graph (comfyui.js collectPromptText), adds a `prompt` field to the
+// comfyui_run / comfyui_workflow results and the workflow-job media endpoint.
+export const COMFYUI_PROGRESS_FILE = path.join('lib', 'progress.js')
+export const COMFYUI_COMFYUI_FILE = path.join('lib', 'comfyui.js')
+
+// comfyui.js: whole-file rewrite (adds collectPromptText + historyNodeText).
+const CFX_CP_MARKER = 'collectPromptText'
+const isComfyuiPromptPatched = (c) => c.includes(CFX_CP_MARKER)
+function transformComfyuiPrompt(c) {
+  if (isComfyuiPromptPatched(c)) return { content: c, count: 0 }
+  if (!c.includes('export function collectMedia')) return { content: c, count: 0 }
+  return { content: readPatchData('comfyui', 'comfyui.js'), count: 1 }
+}
+// progress.js: whole-file rewrite (captures `executed` text outputs).
+const CFX_PROG_MARKER = 'promptOutputs(promptId)'
+const isProgressPatched = (c) => c.includes(CFX_PROG_MARKER)
+function transformProgressPrompt(c) {
+  if (isProgressPatched(c)) return { content: c, count: 0 }
+  if (!c.includes('export class ProgressTracker {')) return { content: c, count: 0 }
+  return { content: readPatchData('comfyui', 'progress.js'), count: 1 }
+}
+// tools.js: import collectPromptText + add the `prompt` field to each sync result.
+const CFXT_IMPORT_ORIG = "import { collectMedia } from './comfyui.js';"
+const CFXT_IMPORT_NEW = "import { collectMedia, collectPromptText } from './comfyui.js';"
+const CFXT_PROMPT_LINE = 'prompt: collectPromptText(entry, runtime.queuedPromptOutputs(promptId)),\n'
+const CFXT_MARKER = 'collectPromptText(entry, runtime.queuedPromptOutputs(promptId))'
+const isToolsPromptPatched = (c) => c.includes(CFXT_MARKER)
+function transformToolsPrompt(c) {
+  if (isToolsPromptPatched(c)) return { content: c, count: 0 }
+  if (!c.includes(CFXT_IMPORT_ORIG) || !c.includes('media: items,')) return { content: c, count: 0 }
+  let patched = c.replace(CFXT_IMPORT_ORIG, CFXT_IMPORT_NEW)
+  patched = patched.replace(/media: items,\n(\s+)summary: summarizeMedia\(items\),/g, (m, sp) => `media: items,\n${sp}${CFXT_PROMPT_LINE}${sp}summary: summarizeMedia(items),`)
+  return { content: patched, count: 1 }
+}
+// index.js: expose queuedPromptOutputs (runtime) + pass wsOutputs to sweep.
+const CFXI_QUEUE_ORIG = 'queueProgress: (promptId) => progress.get(promptId),'
+const CFXI_QUEUE_NEW = CFXI_QUEUE_ORIG + "\n        queuedPromptOutputs: (promptId) => progress.promptOutputs(promptId),"
+const CFXI_MARKER = 'queuedPromptOutputs'
+const CFXI_WS_ORIG = '        const wsUrl = resolved.baseUrl.replace(/^http:/, \'ws:\').replace(/^https:/, \'wss:\').replace(/\\/$/, \'\') + `\/ws?clientId=${CLIENT_ID}`;\n        progress.attach(wsUrl);'
+const CFXI_WS_NEW = '        progress.attach(() => resolved.baseUrl.replace(/^http:/, \'ws:\').replace(/^https:/, \'wss:\').replace(/\\/$/, \'\') + `\/ws?clientId=${CLIENT_ID}`);'
+const isIndexPromptPatched = (c) => c.includes(CFXI_MARKER)
+function transformIndexPrompt(c) {
+  if (isIndexPromptPatched(c)) return { content: c, count: 0 }
+  if (!c.includes(CFXI_QUEUE_ORIG) || !c.includes(CFXI_WS_ORIG)) return { content: c, count: 0 }
+  let patched = c.replace(CFXI_QUEUE_ORIG, CFXI_QUEUE_NEW)
+  patched = patched.replace(/proxyBase: (await )?runtime\.proxyBase\(\) \}\);/, (m, a) => `proxyBase: ${a ?? ''}runtime.proxyBase(), wsOutputs: runtime.queuedPromptOutputs });`)
+  patched = patched.replace(CFXI_WS_ORIG, CFXI_WS_NEW)
+  return { content: patched, count: 3 }
+}
+
+const comfyuiCp = filePatchRunner({ pkg: COMFYUI_PACKAGE, relative: COMFYUI_COMFYUI_FILE, transform: transformComfyuiPrompt, isPatched: isComfyuiPromptPatched })
+const comfyuiProgress = filePatchRunner({ pkg: COMFYUI_PACKAGE, relative: COMFYUI_PROGRESS_FILE, transform: transformProgressPrompt, isPatched: isProgressPatched })
+const comfyuiToolsPs = filePatchRunner({ pkg: COMFYUI_PACKAGE, relative: COMFYUI_TOOLS_FILE, transform: transformToolsPrompt, isPatched: isToolsPromptPatched })
+const comfyuiIndexPs = filePatchRunner({ pkg: COMFYUI_PACKAGE, relative: COMFYUI_INDEX_FILE, transform: transformIndexPrompt, isPatched: isIndexPromptPatched })
+
+export const patchComfyuiPromptSurface = (anchors, seedPaths = []) => {
+  const runs = [comfyuiCp.apply(anchors, seedPaths), comfyuiProgress.apply(anchors, seedPaths), comfyuiToolsPs.apply(anchors, seedPaths), comfyuiIndexPs.apply(anchors, seedPaths)]
+  return {
+    applied: runs.reduce((s, r) => s + r.applied, 0),
+    unchanged: runs.reduce((s, r) => s + r.unchanged, 0),
+    missing: runs.reduce((s, r) => s + r.missing, 0),
+    targets: [...new Set(runs.flatMap((r) => r.targets))],
+    details: runs.flatMap((r) => r.details),
+  }
+}
+export const statusComfyuiPromptSurface = (anchors, seedPaths = []) => [
+  ...comfyuiCp.status(anchors, seedPaths),
+  ...comfyuiProgress.status(anchors, seedPaths),
+  ...comfyuiToolsPs.status(anchors, seedPaths),
+  ...comfyuiIndexPs.status(anchors, seedPaths),
+]
+export const rollbackComfyuiPromptSurface = (anchors, seedPaths = []) => {
+  const results = [comfyuiCp.rollback(anchors, seedPaths), comfyuiProgress.rollback(anchors, seedPaths), comfyuiToolsPs.rollback(anchors, seedPaths), comfyuiIndexPs.rollback(anchors, seedPaths)]
+  return {
+    rolledBack: results.reduce((s, r) => s + r.rolledBack, 0),
+    noBackup: results.reduce((s, r) => s + r.noBackup, 0),
+    targets: [...new Set(results.flatMap((r) => r.targets))],
+    details: results.flatMap((r) => r.details),
+  }
+}
+
+// ── dsh-qqchat: ComfyUI image-download base address ─────────────────────────
+// qqchat_send_image downloaded an http(s) image URL verbatim. A ComfyUI media
+// URL on the public origin sits behind the dsh-passwords login page, so the
+// server-side fetch is redirected to /gateway/login and uploads the login HTML
+// instead of the image. This injects resolveComfyuiMediaUrl(), which appends a
+// short-lived signed ?token= (HMAC via DSH_GATEWAY_MEDIA_TOKEN_SECRET) that the
+// gateway accepts, so the fetch gets past the login page. When the secret is
+// unset the URL is left unchanged (no bypass).
+export const QQCHAT_PACKAGE = 'dsh-qqchat'
+export const QQCHAT_SENDTOOL_FILE = path.join('lib', 'media', 'send-tool.js')
+
+const QQCHAT_FETCH_ORIG = 'const response = await fetch(source, { signal: AbortSignal.timeout(30_000) });'
+const QQCHAT_FETCH_NEW = 'const response = await fetch(resolveComfyuiMediaUrl(source), { signal: AbortSignal.timeout(30_000) });'
+const QQCHAT_IMPORT_ORIG = "import { defineTool } from '@deepseek-ai/dsh-tools';"
+const QQCHAT_HELPER = '\n' + [
+  "import { createHmac } from 'node:crypto';",
+  '/** Append a short-lived signed ?token= to a ComfyUI media URL so a fetch of the',
+  ' * public origin gets past the dsh-passwords login page. The gateway validates the',
+  ' * token (HMAC-SHA256 over base64url(path) + expiry, keyed by',
+  ' * DSH_GATEWAY_MEDIA_TOKEN_SECRET) and only for the exact path it was minted for.',
+  ' * When the secret is unset the URL is left unchanged (no bypass). */',
+  'function resolveComfyuiMediaUrl(source) {',
+  '    if (!/\\/comfyui\\/media(\\?|$)/.test(source)) return source;',
+  "    const secret = process.env.DSH_GATEWAY_MEDIA_TOKEN_SECRET || '';",
+  "    if (secret === '') return source;",
+  '    let url; try { url = new URL(source); } catch { return source; }',
+  "    const b64 = Buffer.from(url.pathname, 'utf8').toString('base64url');",
+  '    const exp = Date.now() + 5 * 60 * 1000;',
+  '    const payload = b64 + \'.\' + exp;',
+  "    const sig = createHmac('sha256', secret).update(payload).digest('hex');",
+  '    const token = payload + \'.\' + sig;',
+  "    return source + (source.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);",
+  '}',
+].join('\n')
+const QQCHAT_PATCH_MARKER = 'resolveComfyuiMediaUrl'
+const isQqchatSendToolPatched = (c) => c.includes(QQCHAT_PATCH_MARKER)
+function transformQqchatSendTool(c) {
+  if (isQqchatSendToolPatched(c)) return { content: c, count: 0 }
+  if (!c.includes(QQCHAT_FETCH_ORIG)) return { content: c, count: 0 }
+  let patched = c.replace(QQCHAT_FETCH_ORIG, QQCHAT_FETCH_NEW)
+  patched = patched.replace(QQCHAT_IMPORT_ORIG, QQCHAT_IMPORT_ORIG + QQCHAT_HELPER)
+  return { content: patched, count: 2 }
+}
+const qqchatSendTool = filePatchRunner({
+  pkg: QQCHAT_PACKAGE, relative: QQCHAT_SENDTOOL_FILE,
+  transform: transformQqchatSendTool, isPatched: isQqchatSendToolPatched,
+})
+export const patchQqchatComfyuiBase = (anchors, seedPaths = []) => qqchatSendTool.apply(anchors, seedPaths)
+export const statusQqchatComfyuiBase = (anchors, seedPaths = []) => qqchatSendTool.status(anchors, seedPaths)
+export const rollbackQqchatComfyuiBase = (anchors, seedPaths = []) => qqchatSendTool.rollback(anchors, seedPaths)
+
+export const applyComfyuiMediaBase = patchComfyuiMediaBase
+export const applyQqchatComfyuiBase = patchQqchatComfyuiBase
+
 export default {
   DEFAULT_PACKAGE,
   DEFAULT_RELATIVE,
@@ -945,6 +1405,10 @@ export default {
   patchGateway,
   statusGateway,
   rollbackGateway,
+  DSPW_MEDIA_TOKEN_MARKER,
+  patchGatewayMediaToken,
+  statusGatewayMediaToken,
+  rollbackGatewayMediaToken,
   DSPW_CLIENT_PACKAGE,
   DSPW_CLIENT_FILE,
   patchDspwClient,
@@ -960,4 +1424,28 @@ export default {
   patchDspwPerms,
   statusDspwPerms,
   rollbackDspwPerms,
+  COMFYUI_PACKAGE,
+  COMFYUI_INDEX_FILE,
+  COMFYUI_HOSTHINT_FILE,
+  COMFYUI_TOOLS_FILE,
+  COMFYUI_ROUTES_FILE,
+  COMFYUI_CLIENT_FILE,
+  patchComfyuiMediaBase,
+  applyComfyuiMediaBase,
+  statusComfyuiMediaBase,
+  rollbackComfyuiMediaBase,
+  patchComfyuiClient,
+  statusComfyuiClient,
+  rollbackComfyuiClient,
+  COMFYUI_PROGRESS_FILE,
+  COMFYUI_COMFYUI_FILE,
+  patchComfyuiPromptSurface,
+  statusComfyuiPromptSurface,
+  rollbackComfyuiPromptSurface,
+  QQCHAT_PACKAGE,
+  QQCHAT_SENDTOOL_FILE,
+  patchQqchatComfyuiBase,
+  applyQqchatComfyuiBase,
+  statusQqchatComfyuiBase,
+  rollbackQqchatComfyuiBase,
 }
