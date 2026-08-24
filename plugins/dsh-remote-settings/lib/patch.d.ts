@@ -77,6 +77,14 @@ export function patchGateway(anchors?: string[]): ApplyAllResult
 export function statusGateway(anchors?: string[]): Array<{ target: string; enabled: boolean; replaced: number }>
 export function rollbackGateway(anchors?: string[]): RollbackAllResult
 
+export const DSPW_MEDIA_TOKEN_MARKER: string
+
+export function patchGatewayMediaToken(anchors?: string[]): ApplyAllResult
+export function statusGatewayMediaToken(
+  anchors?: string[],
+): Array<{ target: string; enabled: boolean; replaced: number }>
+export function rollbackGatewayMediaToken(anchors?: string[]): RollbackAllResult
+
 declare const _default: {
   DEFAULT_PACKAGE: string
   DEFAULT_RELATIVE: string
@@ -97,5 +105,9 @@ declare const _default: {
   patchGateway: typeof patchGateway
   statusGateway: typeof statusGateway
   rollbackGateway: typeof rollbackGateway
+  DSPW_MEDIA_TOKEN_MARKER: string
+  patchGatewayMediaToken: typeof patchGatewayMediaToken
+  statusGatewayMediaToken: typeof statusGatewayMediaToken
+  rollbackGatewayMediaToken: typeof rollbackGatewayMediaToken
 }
 export default _default

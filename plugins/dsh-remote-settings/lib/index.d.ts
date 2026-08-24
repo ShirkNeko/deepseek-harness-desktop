@@ -30,6 +30,12 @@ export interface RemoteSettingsService {
   gatewayApply(): unknown
   /** Restore every matched dsh-passwords gateway copy (the uninstall path). */
   gatewayRollback(): unknown
+  /** Status of the gateway media-token (?token= bypass) patch. */
+  gatewayMediaTokenStatus(): Array<{ target: string; found: boolean; enabled: boolean; replaced: number }>
+  /** Apply the gateway media-token (?token= bypass) patch (idempotent). */
+  gatewayMediaTokenApply(): unknown
+  /** Restore the gateway media-token (?token= bypass) patch. */
+  gatewayMediaTokenRollback(): unknown
   /** Status of every matched dsh-passwords client-card copy (dark-mode patch). */
   dspwClientStatus(): Array<{ target: string; found: boolean; enabled: boolean; replaced: number }>
   /** Patch every matched dsh-passwords client-card copy (idempotent). */

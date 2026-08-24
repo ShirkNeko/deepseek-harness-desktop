@@ -23,6 +23,9 @@ import {
   patchGateway,
   statusGateway,
   rollbackGateway,
+  patchGatewayMediaToken,
+  statusGatewayMediaToken,
+  rollbackGatewayMediaToken,
   DSPW_CLIENT_PACKAGE,
   DSPW_CLIENT_FILE,
   patchDspwClient,
@@ -246,6 +249,45 @@ test('gateway patch lets owner/admin bypass the download allowlist (reversible)'
   const rolled = rollbackGateway([root])
   assert.equal(rolled.rolledBack, 1)
   assert.ok(readFileSync(target, 'utf8').includes('if (!folderAllowed(real, perms.allowed_folders)) {'))
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('gateway media-token patch injects a ?token= bypass (idempotent, reversible)', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'dsh-mt-'))
+  const pkgDir = path.join(root, 'node_modules', 'dsh-passwords', 'dist')
+  mkdirSync(pkgDir, { recursive: true })
+  writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({ name: GATEWAY_PACKAGE }))
+  // A gateway fixture carrying both anchors the media-token transform targets:
+  // the helper insertion point and the sessionOf() middleware check.
+  const gateway =
+    '    /** 子用户权限：缺行时默认关闭全部工作区；已有显式空白名单行仍表示不限目录。 */\n' +
+    '    function effectivePermissions(userId) { return null; }\n' +
+    "    app.use((req, res, next) => {\n" +
+    '            const user = sessionOf(req);\n' +
+    '            if (!user) { res.redirect(302, `/gateway/login?next=${encodeURIComponent(req.originalUrl)}`); return; }\n' +
+    '    });\n'
+  writeFileSync(path.join(pkgDir, 'gateway.js'), gateway)
+
+  const target = path.join(pkgDir, 'gateway.js')
+  const before = statusGatewayMediaToken([root])
+  assert.equal(before[0].enabled, false)
+
+  const patched = patchGatewayMediaToken([root])
+  assert.equal(patched.applied, 1)
+  const content = readFileSync(target, 'utf8')
+  assert.ok(content.includes('function verifyMediaToken(req)'))
+  assert.ok(content.includes('if (verifyMediaToken(req))\n                return next();'))
+  assert.ok(content.indexOf('if (verifyMediaToken(req))') < content.indexOf('const user = sessionOf(req);'))
+  assert.ok(statusGatewayMediaToken([root])[0].enabled)
+
+  // Idempotent.
+  const again = patchGatewayMediaToken([root])
+  assert.equal(again.applied, 0)
+  assert.equal(again.unchanged, 1)
+
+  const rolled = rollbackGatewayMediaToken([root])
+  assert.equal(rolled.rolledBack, 1)
+  assert.equal(readFileSync(target, 'utf8'), gateway)
   rmSync(root, { recursive: true, force: true })
 })
 
